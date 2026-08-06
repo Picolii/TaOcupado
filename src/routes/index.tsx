@@ -6,6 +6,7 @@ import {
   Download,
   Lock,
   MapPin,
+  MapPinOff,
   Minimize2,
   MonitorSmartphone,
   Save,
@@ -92,13 +93,20 @@ function LiveBadge({ live }: { live: boolean }) {
 }
 
 function GeoBadge({ status }: { status: ReturnType<typeof useStalls>["geo"]["status"] }) {
-  const tone = status === "perto" ? "free" : status === "pedindo" ? "warn" : "busy";
+  const tone =
+    status === "perto" || status === "desligado" ? "free" : status === "pedindo" ? "warn" : "busy";
   const label =
-    status === "perto" ? "no banheiro" : status === "pedindo" ? "checando GPS" : "fora do banheiro";
+    status === "desligado"
+      ? "GPS desligado"
+      : status === "perto"
+        ? "no banheiro"
+        : status === "pedindo"
+          ? "checando GPS"
+          : "fora do banheiro";
 
   return (
     <Badge tone={tone}>
-      <MapPin className="size-3" />
+      {status === "desligado" ? <MapPinOff className="size-3" /> : <MapPin className="size-3" />}
       {label}
     </Badge>
   );
@@ -269,6 +277,7 @@ function AdminAccess({
   toggleCleaning,
   setBathroomLocation,
   setBathroomLocationHere,
+  setLocationRequired,
   removeQueueTicket,
   testQueueNotification,
   notificationPermission,
@@ -284,6 +293,7 @@ function AdminAccess({
   toggleCleaning: (admin?: boolean) => void;
   setBathroomLocation: (lat: number, lng: number, radius_m: number) => void;
   setBathroomLocationHere: () => void;
+  setLocationRequired: ReturnType<typeof useStalls>["setLocationRequired"];
   removeQueueTicket: ReturnType<typeof useStalls>["removeQueueTicket"];
   testQueueNotification: ReturnType<typeof useStalls>["testQueueNotification"];
   notificationPermission: ReturnType<typeof useStalls>["notificationPermission"];
@@ -418,6 +428,21 @@ function AdminAccess({
                 >
                   <Bell className="size-4" />
                   Teste aviso ({notificationStatus}/{notificationPermission})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLocationRequired(!(bathroom?.location_required ?? true))}
+                  className={cn(
+                    iconButtonClass(bathroom?.location_required === false),
+                    "col-span-2",
+                  )}
+                >
+                  {bathroom?.location_required === false ? (
+                    <MapPinOff className="size-4" />
+                  ) : (
+                    <MapPin className="size-4" />
+                  )}
+                  {bathroom?.location_required === false ? "GPS desligado" : "GPS ligado"}
                 </button>
               </div>
 
@@ -590,6 +615,7 @@ function Index() {
     toggleCleaning,
     setBathroomLocation,
     setBathroomLocationHere,
+    setLocationRequired,
     floodAlert,
     blockNote,
     cooldownLeft,
@@ -652,6 +678,7 @@ function Index() {
           toggleCleaning={toggleCleaning}
           setBathroomLocation={setBathroomLocation}
           setBathroomLocationHere={setBathroomLocationHere}
+          setLocationRequired={setLocationRequired}
           removeQueueTicket={removeQueueTicket}
           testQueueNotification={testQueueNotification}
           notificationPermission={notificationPermission}
@@ -782,6 +809,7 @@ function Index() {
         toggleCleaning={toggleCleaning}
         setBathroomLocation={setBathroomLocation}
         setBathroomLocationHere={setBathroomLocationHere}
+        setLocationRequired={setLocationRequired}
         removeQueueTicket={removeQueueTicket}
         testQueueNotification={testQueueNotification}
         notificationPermission={notificationPermission}

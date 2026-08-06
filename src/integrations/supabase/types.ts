@@ -15,6 +15,7 @@ export type Database = {
           cleaning_since: string | null;
           id: string;
           lat: number | null;
+          location_required: boolean;
           lng: number | null;
           radius_m: number;
         };
@@ -24,6 +25,7 @@ export type Database = {
           cleaning_since?: string | null;
           id: string;
           lat?: number | null;
+          location_required?: boolean;
           lng?: number | null;
           radius_m?: number;
         };
@@ -33,6 +35,7 @@ export type Database = {
           cleaning_since?: string | null;
           id?: string;
           lat?: number | null;
+          location_required?: boolean;
           lng?: number | null;
           radius_m?: number;
         };

@@ -19,6 +19,7 @@ export type BathroomState = {
   cleaning_since: string | null;
   lat: number | null;
   lng: number | null;
+  location_required: boolean;
   radius_m: number;
   changed_at: string;
 };
@@ -76,7 +77,7 @@ function haversine(a: { lat: number; lng: number }, b: { lat: number; lng: numbe
 }
 
 export type GeoGate = {
-  status: "pedindo" | "perto" | "longe" | "erro";
+  status: "desligado" | "pedindo" | "perto" | "longe" | "erro";
   distance: number | null;
   message: string;
   coords: { lat: number; lng: number } | null;
@@ -88,6 +89,10 @@ function useGeoGate(bathroom: BathroomState | null): GeoGate {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (bathroom?.location_required === false) {
+      setError(null);
+      return;
+    }
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setError("Este navegador nao tem GPS disponivel.");
       return;
@@ -101,9 +106,19 @@ function useGeoGate(bathroom: BathroomState | null): GeoGate {
       { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 },
     );
     return () => navigator.geolocation.clearWatch(id);
-  }, []);
+  }, [bathroom?.location_required]);
 
   return useMemo(() => {
+    if (bathroom?.location_required === false) {
+      return {
+        status: "desligado",
+        distance: null,
+        coords,
+        allowed: true,
+        message: "Localizacao desativada pelo ADM.",
+      };
+    }
+
     const fenced = {
       lat: bathroom?.lat ?? FIXED_BATHROOM_LOCATION.lat,
       lng: bathroom?.lng ?? FIXED_BATHROOM_LOCATION.lng,
@@ -143,7 +158,14 @@ function useGeoGate(bathroom: BathroomState | null): GeoGate {
           allowed: false,
           message: "Voce esta fora do banheiro. De longe nao da palpite.",
         };
-  }, [bathroom?.lat, bathroom?.lng, bathroom?.radius_m, coords, error]);
+  }, [
+    bathroom?.lat,
+    bathroom?.lng,
+    bathroom?.location_required,
+    bathroom?.radius_m,
+    coords,
+    error,
+  ]);
 }
 
 function getTicket() {
@@ -403,6 +425,20 @@ export function useStalls() {
     await supabase.from("bathroom_state").update(patch).eq("id", "main");
   };
 
+  const setLocationRequired = async (location_required: boolean) => {
+    if (!bathroom) return;
+    const patch = {
+      location_required,
+      changed_at: new Date().toISOString(),
+    };
+    setBathroom({ ...bathroom, ...patch });
+    const { error } = await supabase.from("bathroom_state").update(patch).eq("id", "main");
+    if (error) {
+      setBathroom(bathroom);
+      console.warn("Nao foi possivel atualizar a trava de localizacao.", error.message);
+    }
+  };
+
   const setBathroomLocationHere = async () => {
     if (!geo.coords) return;
     await setBathroomLocation(
@@ -564,6 +600,7 @@ export function useStalls() {
     toggleCleaning,
     setBathroomLocation,
     setBathroomLocationHere,
+    setLocationRequired,
     floodAlert,
     blockNote,
     cooldownLeft,

@@ -1,4 +1,4 @@
-import { useBusyMood, type PaperLevel, type Stall } from "@/lib/stalls";
+﻿import { useBusyMood, type PaperLevel, type Stall } from "@/lib/stalls";
 import { cn } from "@/lib/utils";
 
 export function Badge({
@@ -13,7 +13,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide transition-colors",
+        "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide transition-colors",
         tone === "busy" && "border-busy/60 bg-busy/15 text-busy",
         tone === "free" && "border-free/60 bg-free/15 text-free",
         tone === "warn" && "border-orange-400/60 bg-orange-400/15 text-orange-400",
@@ -40,10 +40,10 @@ export function FloodAlert({
   return (
     <div
       role="alert"
-      className="fixed left-1/2 top-4 z-50 w-[min(92vw,32rem)] -translate-x-1/2 animate-scale-in rounded-2xl border border-busy/70 bg-busy/15 px-4 py-3 text-sm font-semibold text-busy shadow-lg backdrop-blur"
+      className="fixed left-1/2 top-4 z-50 w-[min(92vw,32rem)] -translate-x-1/2 animate-scale-in rounded-lg border border-busy/70 bg-busy/15 px-4 py-3 text-sm font-semibold text-busy shadow-lg backdrop-blur"
     >
       <div className="flex items-start gap-3">
-        <span className="animate-pulse text-lg">🚨</span>
+        <span className="mt-1 size-2 shrink-0 animate-pulse rounded-full bg-busy" />
         <div className="flex-1">
           <p>{message}</p>
           {note && <p className="mt-1 text-xs opacity-90">{note}</p>}
@@ -77,21 +77,21 @@ export function FloodAlert({
   );
 }
 
-const PAPER_LOOK: Record<PaperLevel, { label: string; className: string; emoji: string }> = {
+const PAPER_LOOK: Record<PaperLevel, { label: string; className: string; icon: string }> = {
   cheio: {
     label: "cheio",
     className: "border-free/60 bg-free/15 text-free",
-    emoji: "🧻",
+    icon: "🧻",
   },
   acabando: {
-    label: "acabando",
+    label: "baixo",
     className: "border-orange-400/70 bg-orange-400/15 text-orange-400",
-    emoji: "🧻",
+    icon: "🧻",
   },
   acabou: {
     label: "acabou",
     className: "border-busy/70 bg-busy/15 text-busy",
-    emoji: "💀",
+    icon: "💀",
   },
 };
 
@@ -119,16 +119,16 @@ export function PaperRolls({
               onCycle(roll);
             }}
             className={cn(
-              "flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left transition-all active:scale-[0.97]",
+              "flex h-12 items-center justify-between gap-2 rounded-lg border px-3 text-left transition-all active:scale-[0.98]",
               look.className,
               disabled && "cursor-not-allowed opacity-50",
             )}
           >
-            <span className="flex items-center gap-2">
-              <span className={cn("text-xl", level === "acabou" && "animate-pulse")}>
-                {look.emoji}
+            <span className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide">
+              <span className={cn("text-lg leading-none", level === "acabou" && "animate-pulse")}>
+                {look.icon}
               </span>
-              <span className="text-[11px] font-bold uppercase tracking-wide">Rolo {roll}</span>
+              Rolo {roll}
             </span>
             <span className="text-display text-lg leading-none">{look.label}</span>
           </button>
@@ -158,8 +158,8 @@ export function StallCard({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-3xl border transition-all",
-        compact ? "p-6" : "p-5",
+        "group relative overflow-hidden rounded-lg border transition-all",
+        compact ? "p-4" : "p-5",
         blocked && "opacity-60",
         !busy && "border-free/60 bg-free/10 glow-free",
         busy && !mood.stinky && "border-busy/50 bg-busy/8 glow-busy",
@@ -177,32 +177,35 @@ export function StallCard({
       <button
         type="button"
         onClick={onToggle}
+        disabled={blocked}
         aria-pressed={busy}
-        aria-disabled={blocked}
         className={cn(
-          "relative w-full text-left active:scale-[0.99]",
+          "relative w-full text-left transition-transform active:scale-[0.99]",
           blocked && "cursor-not-allowed",
         )}
       >
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <span className={cn("text-display", compact ? "text-5xl" : "text-4xl")}>
+            <span className={cn("text-display leading-none", compact ? "text-4xl" : "text-5xl")}>
               {stall.label}
             </span>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {stall.id === "vaso-2" ? "Lado do mictório" : "Lado da pia"}
+              {stall.id === "vaso-2" ? "Lado do mictorio" : "Lado da pia"}
             </p>
           </div>
-          <span className="flex items-center gap-2">
-            <span className={cn("text-2xl", busy && mood.critical && "animate-toilet-bob")}>
-              🚽
-            </span>
+          <span
+            className={cn(
+              "mt-1 flex h-7 min-w-24 items-center justify-center gap-1.5 rounded-md text-[11px] font-bold uppercase tracking-wide",
+              busy ? "bg-busy text-busy-foreground" : "bg-free text-free-foreground",
+            )}
+          >
             <span
-              className={cn(
-                "relative flex size-5 items-center justify-center rounded-full",
-                busy ? "bg-busy animate-pulse-ring" : "bg-free",
-              )}
-            />
+              aria-hidden
+              className={cn("text-sm", busy && mood.critical && "animate-toilet-bob")}
+            >
+              {busy ? "🚪" : "🚽"}
+            </span>
+            {busy ? "ocupado" : "livre"}
           </span>
         </div>
 
@@ -210,7 +213,7 @@ export function StallCard({
           <span
             className={cn(
               "text-display leading-none",
-              compact ? "text-7xl" : "text-6xl",
+              compact ? "text-6xl" : "text-7xl",
               busy ? "text-busy" : "text-free",
               busy && mood.roast && "animate-pulse",
             )}
@@ -228,51 +231,41 @@ export function StallCard({
           )}
         </div>
 
-        <p className="mt-2 min-h-10 text-sm text-muted-foreground">
-          {busy ? mood.joke : "Porta encostada, luz apagada, tudo em paz."}
-        </p>
+        {busy && <p className="mt-2 min-h-8 text-sm text-muted-foreground">{mood.joke}</p>}
 
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <Badge tone={busy ? "busy" : "free"}>
-            Toque para marcar como {busy ? "livre" : "ocupado"}
-          </Badge>
+        <div className="mt-3 flex min-h-6 flex-wrap items-center gap-1.5">
           {noPaper && (
             <Badge tone="busy" pulse>
-              🧻 sem papel!
+              🧻 sem papel
             </Badge>
           )}
           {busy ? (
             <>
               {mood.stinky && <Badge tone="busy">zona de risco</Badge>}
               {mood.critical && <Badge tone="busy">modo casulo</Badge>}
-              {mood.forgotten && <Badge tone="neutral">esqueceram de desmarcar?</Badge>}
+              {mood.forgotten && <Badge tone="neutral">confere ai</Badge>}
               {mood.roast && (
                 <Badge tone="busy" pulse>
-                  esculacho nível 30min
+                  30min+
                 </Badge>
               )}
               {mood.dead && (
                 <Badge tone="busy" pulse>
-                  ☠️ mandem socorro
+                  verificar
                 </Badge>
               )}
             </>
           ) : (
-            <Badge tone="free">pronto pra uso</Badge>
+            <Badge tone="free">pronto</Badge>
           )}
         </div>
       </button>
 
-      <div className="relative">
-        <p className="mt-4 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-          Papel higiênico — toque para trocar (cheio → acabando → acabou)
-        </p>
-        <PaperRolls stall={stall} onCycle={onCyclePaper} disabled={blocked} />
-      </div>
+      <PaperRolls stall={stall} onCycle={onCyclePaper} disabled={blocked} />
 
       {busy && mood.dead && (
         <span className="absolute -right-6 top-4 rotate-12 rounded bg-busy px-8 py-0.5 text-xs font-bold text-busy-foreground">
-          CÓDIGO VERMELHO
+          CODIGO VERMELHO
         </span>
       )}
     </div>

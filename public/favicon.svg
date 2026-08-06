@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="10" y1="6" x2="54" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1f2a33"/>
+      <stop offset="1" stop-color="#10151b"/>
+    </linearGradient>
+    <linearGradient id="seat" x1="18" y1="24" x2="43" y2="52" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f8fbff"/>
+      <stop offset="1" stop-color="#b8c7d5"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="15" fill="url(#bg)"/>
+  <path d="M13 16h38" stroke="#2ddf8b" stroke-width="5" stroke-linecap="round"/>
+
+  <g fill="none" stroke="#f8fbff" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15h22v13H21z" fill="#dbe7f1" stroke-width="3.5"/>
+    <path d="M24 28h22v8c0 8-6 14-14 14h-5c-4 0-7-3-7-7v-8c0-4 2-7 4-7z" fill="url(#seat)" stroke-width="3.5"/>
+    <path d="M27 35c3 2 10 2 14 0" stroke="#60717f" stroke-width="3"/>
+    <path d="M30 50h11" stroke-width="5"/>
+    <path d="M26 56h21" stroke-width="5"/>
+  </g>
+
+  <circle cx="44" cy="20" r="3" fill="#60717f"/>
+  <path d="M48 44c4 0 7 3 7 7v3H41v-3c0-4 3-7 7-7z" fill="#ff7043"/>
+  <path d="M45.5 48.5h5" stroke="#2b120d" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

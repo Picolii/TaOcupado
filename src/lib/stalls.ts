@@ -51,6 +51,19 @@ export const FIXED_BATHROOM_LOCATION = {
   label: "Andorinha, Itapema - SC",
 };
 
+type BathroomPayload = Omit<BathroomState, "location_required"> &
+  Partial<Pick<BathroomState, "location_required">>;
+
+function normalizeBathroomState(row: BathroomPayload | null | undefined): BathroomState | null {
+  if (!row) return null;
+  const radius_m = row.radius_m ?? FIXED_BATHROOM_LOCATION.radius_m;
+  return {
+    ...row,
+    radius_m,
+    location_required: row.location_required ?? radius_m !== 0,
+  };
+}
+
 const FLOOD_MESSAGES = [
   "Calma no clique! O vaso nao vai a lugar nenhum.",
   "Isso ai e botao, nao tambor. Respira.",
@@ -241,6 +254,7 @@ export function useStalls() {
   const [floodAlert, setFloodAlert] = useState<string | null>(null);
   const [blockNote, setBlockNote] = useState<string | null>(null);
   const [cooldownLeft, setCooldownLeft] = useState(0);
+  const [locationTogglePending, setLocationTogglePending] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<
     NotificationPermission | "unsupported"
   >("default");
@@ -253,8 +267,14 @@ export function useStalls() {
   const floodCount = useRef(0);
   const notified = useRef(false);
   const liveChannel = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const bathroomRef = useRef<BathroomState | null>(null);
+  const pendingLocationRequired = useRef<boolean | null>(null);
 
   useEffect(() => setTicket(getTicket()), []);
+
+  useEffect(() => {
+    bathroomRef.current = bathroom;
+  }, [bathroom]);
 
   useEffect(() => {
     if (typeof Notification === "undefined") {
@@ -280,7 +300,7 @@ export function useStalls() {
       ]);
       if (!active) return;
       if (s) setStalls(s as Stall[]);
-      if (b) setBathroom(b as BathroomState);
+      if (b) setBathroom(normalizeBathroomState(b as BathroomPayload));
       loadQueue();
     })();
 
@@ -293,7 +313,20 @@ export function useStalls() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "bathroom_state" },
-        (payload) => setBathroom(payload.new as BathroomState),
+        (payload) => {
+          const row = normalizeBathroomState(payload.new as BathroomPayload);
+          if (!row) return;
+          const currentChangedAt = bathroomRef.current?.changed_at;
+          if (currentChangedAt && row.changed_at < currentChangedAt) return;
+          if (
+            pendingLocationRequired.current !== null &&
+            row.location_required !== pendingLocationRequired.current
+          ) {
+            return;
+          }
+          bathroomRef.current = row;
+          setBathroom(row);
+        },
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "queue_tickets" }, () =>
         loadQueue(),
@@ -425,18 +458,79 @@ export function useStalls() {
     await supabase.from("bathroom_state").update(patch).eq("id", "main");
   };
 
-  const setLocationRequired = async (location_required: boolean) => {
-    if (!bathroom) return;
+  const setLocationRequired = async (location_required?: boolean) => {
+    const current = bathroomRef.current;
+    if (!current || locationTogglePending) return false;
+    const nextRequired = location_required ?? !current.location_required;
+    const changed_at = new Date().toISOString();
     const patch = {
-      location_required,
-      changed_at: new Date().toISOString(),
+      location_required: nextRequired,
+      changed_at,
     };
-    setBathroom({ ...bathroom, ...patch });
-    const { error } = await supabase.from("bathroom_state").update(patch).eq("id", "main");
-    if (error) {
-      setBathroom(bathroom);
-      console.warn("Nao foi possivel atualizar a trava de localizacao.", error.message);
+    const optimistic = { ...current, ...patch };
+    pendingLocationRequired.current = nextRequired;
+    setLocationTogglePending(true);
+    bathroomRef.current = optimistic;
+    setBathroom(optimistic);
+
+    const { data, error } = await supabase
+      .from("bathroom_state")
+      .update(patch)
+      .eq("id", "main")
+      .select("*")
+      .maybeSingle();
+
+    if (error?.code === "42703") {
+      const fallbackPatch = {
+        radius_m: nextRequired ? FIXED_BATHROOM_LOCATION.radius_m : 0,
+        changed_at,
+      };
+      const fallbackOptimistic = { ...optimistic, ...fallbackPatch };
+      bathroomRef.current = fallbackOptimistic;
+      setBathroom(fallbackOptimistic);
+
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from("bathroom_state")
+        .update(fallbackPatch)
+        .eq("id", "main")
+        .select("*")
+        .maybeSingle();
+
+      if (pendingLocationRequired.current === nextRequired) {
+        pendingLocationRequired.current = null;
+        setLocationTogglePending(false);
+      }
+
+      if (fallbackError) {
+        bathroomRef.current = current;
+        setBathroom(current);
+        console.warn("Nao foi possivel atualizar a trava de localizacao.", fallbackError.message);
+        return false;
+      }
+
+      const saved =
+        normalizeBathroomState(fallbackData as BathroomPayload | null) ?? fallbackOptimistic;
+      bathroomRef.current = saved;
+      setBathroom(saved);
+      return true;
     }
+
+    if (pendingLocationRequired.current === nextRequired) {
+      pendingLocationRequired.current = null;
+      setLocationTogglePending(false);
+    }
+
+    if (error) {
+      bathroomRef.current = current;
+      setBathroom(current);
+      console.warn("Nao foi possivel atualizar a trava de localizacao.", error.message);
+      return false;
+    }
+
+    const saved = normalizeBathroomState(data as BathroomPayload | null) ?? optimistic;
+    bathroomRef.current = saved;
+    setBathroom(saved);
+    return true;
   };
 
   const setBathroomLocationHere = async () => {
@@ -601,6 +695,7 @@ export function useStalls() {
     setBathroomLocation,
     setBathroomLocationHere,
     setLocationRequired,
+    locationTogglePending,
     floodAlert,
     blockNote,
     cooldownLeft,

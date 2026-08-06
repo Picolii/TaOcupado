@@ -278,6 +278,7 @@ function AdminAccess({
   setBathroomLocation,
   setBathroomLocationHere,
   setLocationRequired,
+  locationTogglePending,
   removeQueueTicket,
   testQueueNotification,
   notificationPermission,
@@ -294,6 +295,7 @@ function AdminAccess({
   setBathroomLocation: (lat: number, lng: number, radius_m: number) => void;
   setBathroomLocationHere: () => void;
   setLocationRequired: ReturnType<typeof useStalls>["setLocationRequired"];
+  locationTogglePending: ReturnType<typeof useStalls>["locationTogglePending"];
   removeQueueTicket: ReturnType<typeof useStalls>["removeQueueTicket"];
   testQueueNotification: ReturnType<typeof useStalls>["testQueueNotification"];
   notificationPermission: ReturnType<typeof useStalls>["notificationPermission"];
@@ -431,10 +433,12 @@ function AdminAccess({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setLocationRequired(!(bathroom?.location_required ?? true))}
+                  onClick={() => setLocationRequired()}
+                  disabled={locationTogglePending}
                   className={cn(
                     iconButtonClass(bathroom?.location_required === false),
                     "col-span-2",
+                    locationTogglePending && "cursor-wait opacity-70",
                   )}
                 >
                   {bathroom?.location_required === false ? (
@@ -442,7 +446,11 @@ function AdminAccess({
                   ) : (
                     <MapPin className="size-4" />
                   )}
-                  {bathroom?.location_required === false ? "GPS desligado" : "GPS ligado"}
+                  {locationTogglePending
+                    ? "Salvando GPS"
+                    : bathroom?.location_required === false
+                      ? "GPS desligado"
+                      : "GPS ligado"}
                 </button>
               </div>
 
@@ -616,6 +624,7 @@ function Index() {
     setBathroomLocation,
     setBathroomLocationHere,
     setLocationRequired,
+    locationTogglePending,
     floodAlert,
     blockNote,
     cooldownLeft,
@@ -679,6 +688,7 @@ function Index() {
           setBathroomLocation={setBathroomLocation}
           setBathroomLocationHere={setBathroomLocationHere}
           setLocationRequired={setLocationRequired}
+          locationTogglePending={locationTogglePending}
           removeQueueTicket={removeQueueTicket}
           testQueueNotification={testQueueNotification}
           notificationPermission={notificationPermission}
@@ -810,6 +820,7 @@ function Index() {
         setBathroomLocation={setBathroomLocation}
         setBathroomLocationHere={setBathroomLocationHere}
         setLocationRequired={setLocationRequired}
+        locationTogglePending={locationTogglePending}
         removeQueueTicket={removeQueueTicket}
         testQueueNotification={testQueueNotification}
         notificationPermission={notificationPermission}

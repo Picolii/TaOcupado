@@ -28,11 +28,11 @@ npm exec --yes --package=wrangler -- wrangler login
 npm run cf:whoami
 ```
 
-3. Configure as variaveis no Worker. Use os valores do seu `.env` local:
+3. Configure as variaveis no Worker. O script abaixo usa os valores do seu `.env` local sem mostrar os segredos no terminal:
 
 ```sh
-npm exec --yes --package=wrangler -- wrangler --cwd .output/server secret put SUPABASE_URL
-npm exec --yes --package=wrangler -- wrangler --cwd .output/server secret put SUPABASE_PUBLISHABLE_KEY
+npm run build
+npm run cf:secrets
 ```
 
 4. Publique:
@@ -41,7 +41,7 @@ npm exec --yes --package=wrangler -- wrangler --cwd .output/server secret put SU
 npm run deploy:cloudflare
 ```
 
-O deploy cria um endereco `*.workers.dev`. Depois disso, adicione um dominio proprio pelo painel da Cloudflare, se quiser.
+O deploy publica em `https://taocupado.taocupado.workers.dev`. Depois disso, adicione um dominio proprio pelo painel da Cloudflare, se quiser.
 
 ## Deploy continuo por Git
 
@@ -76,7 +76,7 @@ Depois de criar um repositorio vazio no GitHub:
 ```sh
 git add .
 git commit -m "Prepare Cloudflare deployment"
-git remote add origin https://github.com/SEU_USUARIO/SEU_REPO.git
+git remote add origin https://github.com/Picolii/TaOcupado.git
 git push -u origin main
 ```
 

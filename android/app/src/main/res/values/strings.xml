@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Ta Ocupado</string>
-    <string name="title_activity_main">Ta Ocupado</string>
-    <string name="package_name">com.picolii.taocupado</string>
-    <string name="custom_url_scheme">com.picolii.taocupado</string>
-</resources>

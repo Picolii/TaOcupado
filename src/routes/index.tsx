@@ -1,12 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Bell,
   Brush,
   Crosshair,
+  Download,
   Lock,
   MapPin,
   MapPinOff,
   Minimize2,
+  MonitorSmartphone,
   Save,
   ShieldCheck,
   Trash2,
@@ -20,9 +22,9 @@ import {
   type CSSProperties,
   type FormEvent,
 } from "react";
+import { useInstallPrompt } from "@/lib/pwa";
 import { QUEUE_STICKERS } from "@/lib/queue-stickers";
 import { useStalls } from "@/lib/stalls";
-import { useNativeStatusPanel } from "@/lib/native-status-panel";
 import { cn } from "@/lib/utils";
 import { Badge, FloodAlert, StallCard } from "@/components/stalls-ui";
 
@@ -31,16 +33,16 @@ const ADMIN_PASSWORD = "AchouASenhaTambem?";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Tá Ocupado? - Status do banheiro em tempo real" },
+      { title: "Ta Ocupado? - Status do banheiro em tempo real" },
       {
         name: "description",
         content:
-          "Veja em tempo real se o Vaso 1 e o Vaso 2 estão livres, ocupados, em limpeza ou sem papel.",
+          "Veja em tempo real se o Vaso 1 e o Vaso 2 estao livres, ocupados, em limpeza ou sem papel.",
       },
-      { property: "og:title", content: "Tá Ocupado? - Status do banheiro em tempo real" },
+      { property: "og:title", content: "Ta Ocupado? - Status do banheiro em tempo real" },
       {
         property: "og:description",
-        content: "Painel ao vivo dos boxes, papel higiênico, limpeza e fila de espera.",
+        content: "Painel ao vivo dos boxes, papel higienico, limpeza e fila de espera.",
       },
     ],
   }),
@@ -53,6 +55,26 @@ function iconButtonClass(active = false) {
     active
       ? "bg-free text-background hover:opacity-90"
       : "border border-border bg-card text-muted-foreground hover:text-foreground",
+  );
+}
+
+function InstallWidgetButton() {
+  const { canInstall, install } = useInstallPrompt();
+
+  if (canInstall) {
+    return (
+      <button type="button" onClick={install} className={iconButtonClass()}>
+        <Download className="size-4" />
+        Instalar widget
+      </button>
+    );
+  }
+
+  return (
+    <Link to="/widget" className={iconButtonClass()}>
+      <MonitorSmartphone className="size-4" />
+      Widget
+    </Link>
   );
 }
 
@@ -171,9 +193,9 @@ function QueueRail({
           <h2 className="text-display text-2xl leading-none">Fila</h2>
           <p className="text-xs text-muted-foreground">
             {queueLength === 0
-              ? "Sem ninguém esperando."
+              ? "Sem ninguem esperando."
               : myTurn
-                ? "Você está em primeiro."
+                ? "Voce esta em primeiro."
                 : `${queueLength} lugar${queueLength === 1 ? "" : "es"} ocupado${queueLength === 1 ? "" : "s"}.`}
           </p>
         </div>
@@ -210,7 +232,7 @@ function QueueRail({
                 >
                   <span className="text-display text-2xl leading-none">{index + 1}</span>
                   <span className="text-[10px] font-bold uppercase tracking-wide">
-                    {mine ? "você" : "anon"}
+                    {mine ? "voce" : "anon"}
                   </span>
                 </div>
               </div>
@@ -227,7 +249,7 @@ function QueueRail({
               type="button"
               onClick={() => onSendEmote(stickerUrl)}
               className="flex size-14 shrink-0 items-center justify-center rounded-lg border border-border bg-background/70 transition-transform hover:scale-105 active:scale-95"
-              aria-label={`Lançar emote ${index + 1}`}
+              aria-label={`Lancar emote ${index + 1}`}
             >
               <img
                 src={stickerUrl}
@@ -314,7 +336,7 @@ function AdminAccess({
     const nextLng = Number(lng);
     const nextRadius = Number(radius);
     if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng) || !Number.isFinite(nextRadius)) {
-      setError("Lat, long e raio precisam ser números.");
+      setError("Lat, long e raio precisam ser numeros.");
       return;
     }
     if (nextRadius < 1 || nextRadius > 5) {
@@ -486,7 +508,7 @@ function AdminAccess({
               {error && <p className="text-xs font-semibold text-busy">{error}</p>}
               <button type="button" onClick={saveLocation} className={iconButtonClass(true)}>
                 <Save className="size-4" />
-                Salvar perímetro
+                Salvar perimetro
               </button>
 
               <div className="rounded-lg border border-border bg-background/40 p-2">
@@ -518,7 +540,7 @@ function AdminAccess({
                           type="button"
                           onClick={() => removeQueueTicket(queueTicket.id)}
                           className="inline-flex size-9 items-center justify-center rounded-lg border border-busy/50 bg-busy/10 text-busy transition-colors hover:bg-busy/20"
-                          aria-label={`Remover posição ${index + 1} da fila`}
+                          aria-label={`Remover posicao ${index + 1} da fila`}
                         >
                           <Trash2 className="size-4" />
                         </button>
@@ -550,7 +572,7 @@ function CleaningClosed({
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 px-4 py-5">
       <header className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-display text-4xl leading-none sm:text-5xl">Tá ocupado?</h1>
+          <h1 className="text-display text-4xl leading-none sm:text-5xl">Ta ocupado?</h1>
           <p className="text-sm text-muted-foreground">Banheiro temporariamente fechado.</p>
         </div>
         <LiveBadge live={live} />
@@ -561,7 +583,7 @@ function CleaningClosed({
         <div className="caution-tape absolute inset-x-0 bottom-0 h-10 border-t border-background/50" />
 
         <div className="relative z-10 mt-14">
-          <Badge tone="warn">área interditada</Badge>
+          <Badge tone="warn">area interditada</Badge>
           <h2 className="mt-4 text-display text-7xl leading-none text-orange-300 sm:text-8xl">
             Em limpeza
           </h2>
@@ -630,7 +652,6 @@ function Index() {
 
   const cleaning = bathroom?.cleaning ?? false;
   const freeCount = stalls?.filter((s) => !s.occupied).length ?? 0;
-  const nativeStatusPanel = useNativeStatusPanel(stalls, bathroom, queue.length);
   const locked = !adminUnlocked && (blocked || cleaning || !geo.allowed);
   const queueText = inQueue
     ? myTurn
@@ -690,7 +711,7 @@ function Index() {
 
       <header className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-display text-4xl leading-none sm:text-5xl">Tá ocupado?</h1>
+          <h1 className="text-display text-4xl leading-none sm:text-5xl">Ta ocupado?</h1>
           <p className="text-sm text-muted-foreground">Painel ao vivo dos boxes.</p>
         </div>
         <LiveBadge live={live} />
@@ -707,7 +728,7 @@ function Index() {
               sua vez
             </Badge>
           )}
-          {notificationPermission === "denied" && <Badge tone="warn">notificação bloqueada</Badge>}
+          {notificationPermission === "denied" && <Badge tone="warn">notificacao bloqueada</Badge>}
           {notificationStatus === "failed" && <Badge tone="warn">aviso falhou</Badge>}
           {notificationStatus === "sent" && <Badge tone="free">aviso ok</Badge>}
         </div>
@@ -743,18 +764,7 @@ function Index() {
               Ativar aviso
             </button>
           )}
-          {nativeStatusPanel.available && (
-            <button
-              type="button"
-              onClick={
-                nativeStatusPanel.enabled ? nativeStatusPanel.disable : nativeStatusPanel.enable
-              }
-              className={cn(iconButtonClass(nativeStatusPanel.enabled), "col-span-2 sm:col-span-1")}
-            >
-              <Bell className="size-4" />
-              {nativeStatusPanel.enabled ? "Parar painel" : "Acompanhar"}
-            </button>
-          )}
+          <InstallWidgetButton />
         </div>
 
         <div className="min-w-0 lg:col-span-2">
@@ -795,7 +805,7 @@ function Index() {
       )}
       {adminUnlocked && (
         <p className="rounded-lg border border-free/50 bg-free/10 px-3 py-2 text-sm font-semibold text-free">
-          ADM ativo: GPS, limpeza e anti-flood não bloqueiam suas marcações.
+          ADM ativo: GPS, limpeza e anti-flood nao bloqueiam suas marcacoes.
         </p>
       )}
       <AdminAccess

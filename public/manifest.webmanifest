@@ -1,8 +1,8 @@
 {
-  "name": "Tá Ocupado?",
-  "short_name": "Tá Ocupado",
-  "description": "Painel ao vivo do status dos dois vasos.",
-  "start_url": "/",
+  "name": "Ta Ocupado?",
+  "short_name": "Ta Ocupado",
+  "description": "Widget simples com o status dos dois vasos.",
+  "start_url": "/widget",
   "scope": "/",
   "display": "standalone",
   "background_color": "#171c23",
@@ -16,5 +16,11 @@
       "purpose": "any maskable"
     }
   ],
-  "shortcuts": []
+  "shortcuts": [
+    {
+      "name": "Abrir widget",
+      "short_name": "Widget",
+      "url": "/widget"
+    }
+  ]
 }

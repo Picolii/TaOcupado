@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - feature/admin-location-toggle
+      - feature/native-capacitor-status-panel
 
 jobs:
   build-android:

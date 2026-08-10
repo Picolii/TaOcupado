@@ -1,11 +1,5 @@
-const CACHE_NAME = "taocupado-widget-v3";
-const APP_SHELL = [
-  "/widget",
-  "/manifest.webmanifest",
-  "/pwa-icon.svg",
-  "/favicon.svg",
-  "/favicon.ico",
-];
+const CACHE_NAME = "taocupado-app-v4";
+const APP_SHELL = ["/", "/manifest.webmanifest", "/pwa-icon.svg", "/favicon.svg", "/favicon.ico"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -37,7 +31,7 @@ self.addEventListener("fetch", (event) => {
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         return response;
       })
-      .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/widget"))),
+      .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/"))),
   );
 });
 

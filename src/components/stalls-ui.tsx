@@ -190,7 +190,7 @@ export function StallCard({
               {stall.label}
             </span>
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
-              {stall.id === "vaso-2" ? "Lado do mictorio" : "Lado da pia"}
+              {stall.id === "vaso-2" ? "Lado do mictório" : "Lado da pia"}
             </p>
           </div>
           <span
@@ -243,7 +243,7 @@ export function StallCard({
             <>
               {mood.stinky && <Badge tone="busy">zona de risco</Badge>}
               {mood.critical && <Badge tone="busy">modo casulo</Badge>}
-              {mood.forgotten && <Badge tone="neutral">confere ai</Badge>}
+              {mood.forgotten && <Badge tone="neutral">confere aí</Badge>}
               {mood.roast && (
                 <Badge tone="busy" pulse>
                   30min+
@@ -265,7 +265,7 @@ export function StallCard({
 
       {busy && mood.dead && (
         <span className="absolute -right-6 top-4 rotate-12 rounded bg-busy px-8 py-0.5 text-xs font-bold text-busy-foreground">
-          CODIGO VERMELHO
+          CÓDIGO VERMELHO
         </span>
       )}
     </div>

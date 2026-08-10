@@ -69,11 +69,11 @@ function normalizeBathroomState(row: BathroomPayload | null | undefined): Bathro
 }
 
 const FLOOD_MESSAGES = [
-  "Calma no clique! O vaso nao vai a lugar nenhum.",
-  "Isso ai e botao, nao tambor. Respira.",
+  "Calma no clique! O vaso não vai a lugar nenhum.",
+  "Isso aí é botão, não tambor. Respira.",
   "Detectamos flood de dedo. O banheiro pede paz.",
-  "Voce esta fazendo stress test em um vaso sanitario. Serio?",
-  "Cada clique seu acorda todas as abas abertas. Tenha misericordia.",
+  "Você está fazendo stress test em um vaso sanitário. Sério?",
+  "Cada clique seu acorda todas as abas abertas. Tenha misericórdia.",
 ];
 
 export const PAPER_ORDER: PaperLevel[] = ["cheio", "acabando", "acabou"];
@@ -111,7 +111,7 @@ function useGeoGate(bathroom: BathroomState | null): GeoGate {
       return;
     }
     if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setError("Este navegador nao tem GPS disponivel.");
+      setError("Este navegador não tem GPS disponível.");
       return;
     }
     const id = navigator.geolocation.watchPosition(
@@ -119,7 +119,7 @@ function useGeoGate(bathroom: BathroomState | null): GeoGate {
         setError(null);
         setCoords({ lat: p.coords.latitude, lng: p.coords.longitude });
       },
-      () => setError("Sem permissao de localizacao."),
+      () => setError("Sem permissão de localização."),
       { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 },
     );
     return () => navigator.geolocation.clearWatch(id);
@@ -132,7 +132,7 @@ function useGeoGate(bathroom: BathroomState | null): GeoGate {
         distance: null,
         coords,
         allowed: true,
-        message: "Localizacao desativada pelo ADM.",
+        message: "Localização desativada pelo ADM.",
       };
     }
 
@@ -155,7 +155,7 @@ function useGeoGate(bathroom: BathroomState | null): GeoGate {
         distance: null,
         coords,
         allowed: false,
-        message: "Confirmando se voce esta no banheiro...",
+        message: "Confirmando se você está no banheiro...",
       };
 
     const distance = Math.round(haversine(coords, fenced));
@@ -166,14 +166,14 @@ function useGeoGate(bathroom: BathroomState | null): GeoGate {
           distance,
           coords,
           allowed: true,
-          message: "Voce esta no banheiro. Liberado.",
+          message: "Você está no banheiro. Liberado.",
         }
       : {
           status: "longe",
           distance,
           coords,
           allowed: false,
-          message: "Voce esta fora do banheiro. De longe nao da palpite.",
+          message: "Você está fora do banheiro. De longe não dá palpite.",
         };
   }, [
     bathroom?.lat,
@@ -390,7 +390,7 @@ export function useStalls() {
     const now = Date.now();
 
     if (now < cooldownUntil.current) {
-      setBlockNote("Bloqueado por flood. Espera o contador zerar antes de tocar de novo.");
+      setBlockNote("Bloqueado por flood. Espere o contador zerar antes de tocar de novo.");
       return false;
     }
 
@@ -498,7 +498,7 @@ export function useStalls() {
     if (fallbackError) {
       bathroomRef.current = previous;
       setBathroom(previous);
-      console.warn("Nao foi possivel atualizar a trava de localizacao.", fallbackError.message);
+      console.warn("Não foi possível atualizar a trava de localização.", fallbackError.message);
       return false;
     }
 
@@ -554,7 +554,7 @@ export function useStalls() {
     if (error) {
       bathroomRef.current = current;
       setBathroom(current);
-      console.warn("Nao foi possivel atualizar a trava de localizacao.", error.message);
+      console.warn("Não foi possível atualizar a trava de localização.", error.message);
       return false;
     }
 
@@ -609,8 +609,8 @@ export function useStalls() {
       return false;
     }
 
-    const sent = await showSystemNotification("E a sua vez!", {
-      body: "Um vaso liberou e voce e o proximo da fila.",
+    const sent = await showSystemNotification("É a sua vez!", {
+      body: "Um vaso liberou e você é o próximo da fila.",
       renotify: true,
       tag: "taocupado-fila",
       vibrate: [150, 80, 150],
@@ -686,7 +686,7 @@ export function useStalls() {
         sender_position: position,
       },
     });
-    if (result === "error") console.warn("Nao foi possivel transmitir o emote da fila.");
+    if (result === "error") console.warn("Não foi possível transmitir o emote da fila.");
     return true;
   };
 
@@ -764,27 +764,27 @@ export function useTick(ms = 30000) {
 
 const BUSY_JOKES: { min: number; text: string }[] = [
   { min: 0, text: "Acabou de sentar. Respeite o momento." },
-  { min: 1, text: "Em plena reflexao filosofica." },
-  { min: 2, text: "Script de evacuacao travou no while(true)?" },
-  { min: 3, text: "O pacote ta grande demais pro buffer?" },
-  { min: 4, text: "Ja deu tempo de ler o rotulo do sabonete inteiro." },
+  { min: 1, text: "Em plena reflexão filosófica." },
+  { min: 2, text: "Script de evacuação travou no while(true)?" },
+  { min: 3, text: "O pacote tá grande demais pro buffer?" },
+  { min: 4, text: "Já deu tempo de ler o rótulo do sabonete inteiro." },
   { min: 5, text: "Suspeita de scroll infinito em andamento." },
   { min: 10, text: "Alerta de perna dormindo. Envie um resgate." },
-  { min: 15, text: "Isso nao e mais uma visita, e uma mudanca." },
-  { min: 20, text: "Sera que alguem esqueceu de desmarcar? Confere ai." },
+  { min: 15, text: "Isso não é mais uma visita, é uma mudança." },
+  { min: 20, text: "Será que alguém esqueceu de desmarcar? Confere aí." },
   { min: 24, text: "Considerando cobrar aluguel deste box." },
   { min: 30, text: "30 minutos. Isso virou esculacho oficial." },
   {
     min: 35,
-    text: "Ninguem fica tanto tempo assim: ou esqueceram de desmarcar, ou e grave.",
+    text: "Ninguém fica tanto tempo assim: ou esqueceram de desmarcar, ou é grave.",
   },
   {
     min: 45,
-    text: "Suspeita de emergencia no vaso. Alguem vai la ver se esta tudo bem.",
+    text: "Suspeita de emergência no vaso. Alguém vai lá ver se está tudo bem.",
   },
   {
     min: 60,
-    text: "Declarado monumento historico. Envie uma equipe de resgate.",
+    text: "Declarado monumento histórico. Envie uma equipe de resgate.",
   },
 ];
 

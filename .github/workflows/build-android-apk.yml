@@ -6,6 +6,9 @@ on:
     branches:
       - feature/native-capacitor-status-panel
 
+permissions:
+  contents: write
+
 jobs:
   build-android:
     name: Build debug APK
@@ -59,3 +62,16 @@ jobs:
           name: ta-ocupado-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Create GitHub pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: native-apk-${{ github.run_number }}
+          name: Ta Ocupado Android APK #${{ github.run_number }}
+          body: |
+            APK debug para teste do app nativo Android.
+
+            Branch: `${{ github.ref_name }}`
+            Commit: `${{ github.sha }}`
+          prerelease: true
+          files: android/app/build/outputs/apk/debug/app-debug.apk

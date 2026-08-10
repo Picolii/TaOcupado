@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/notification_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#171C23"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/notification_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="sans-serif-condensed"
+        android:text="Tá Ocupado?"
+        android:textAllCaps="false"
+        android:textColor="#F8FAFC"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/notification_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="Status ao vivo"
+        android:textColor="#94A3B8"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:id="@+id/notification_stall_one_card"
+            android:layout_width="0dp"
+            android:layout_height="72dp"
+            android:layout_marginEnd="6dp"
+            android:layout_weight="1"
+            android:background="#113326"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:padding="10dp">
+
+            <TextView
+                android:id="@+id/notification_stall_one_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Vaso 1"
+                android:textColor="#A7F3D0"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/notification_stall_one_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="LIVRE"
+                android:textColor="#22C55E"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/notification_stall_two_card"
+            android:layout_width="0dp"
+            android:layout_height="72dp"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:background="#113326"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:padding="10dp">
+
+            <TextView
+                android:id="@+id/notification_stall_two_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Vaso 2"
+                android:textColor="#A7F3D0"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/notification_stall_two_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="LIVRE"
+                android:textColor="#22C55E"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/notification_footer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="Fila vazia"
+        android:textColor="#CBD5E1"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+</LinearLayout>

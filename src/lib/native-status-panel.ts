@@ -1,26 +1,34 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BathroomState, Stall } from "@/lib/stalls";
 
-const STATUS_NOTIFICATION_ID = 7001;
 const STATUS_CHANNEL_ID = "bathroom-status";
 const STORAGE_KEY = "tao-native-status-panel";
+
+type NativeStallStatus = {
+  label: string;
+  occupied: boolean;
+  noPaper: boolean;
+};
+
+type NativeStatusPanelPlugin = {
+  update(options: {
+    cleaning: boolean;
+    summary: string;
+    footer: string;
+    stallOne: NativeStallStatus;
+    stallTwo: NativeStallStatus;
+  }): Promise<void>;
+  cancel(): Promise<void>;
+};
 
 async function getNativePlatform() {
   const { Capacitor } = await import("@capacitor/core");
   return Capacitor.getPlatform();
 }
 
-function formatStatus(stalls: Stall[] | null, bathroom: BathroomState | null, queueLength: number) {
-  if (bathroom?.cleaning) return "Banheiro em limpeza. Boxes ocultos.";
-  if (!stalls?.length) return "Carregando status dos vasos...";
-
-  const stallLines = stalls.map((stall) => {
-    const state = stall.occupied ? "ocupado" : "livre";
-    const paper = stall.paper_1 === "acabou" && stall.paper_2 === "acabou" ? " · sem papel" : "";
-    return `${stall.label}: ${state}${paper}`;
-  });
-  const queueLine = queueLength > 0 ? `Fila: ${queueLength}` : "Fila vazia";
-  return [...stallLines, queueLine].join("\n");
+async function getNativeStatusPanelPlugin() {
+  const { registerPlugin } = await import("@capacitor/core");
+  return registerPlugin<NativeStatusPanelPlugin>("NativeStatusPanel");
 }
 
 async function ensureStatusChannel() {
@@ -45,30 +53,46 @@ async function requestNotificationPermission() {
   return next.display === "granted";
 }
 
-async function showStatusNotification(body: string) {
-  const { LocalNotifications } = await import("@capacitor/local-notifications");
+function toNativeStall(stall: Stall | undefined, index: number): NativeStallStatus {
+  return {
+    label: stall?.label ?? `Vaso ${index}`,
+    occupied: stall?.occupied ?? false,
+    noPaper: stall ? stall.paper_1 === "acabou" && stall.paper_2 === "acabou" : false,
+  };
+}
 
+function getSummary(stalls: Stall[] | null, bathroom: BathroomState | null) {
+  if (bathroom?.cleaning) return "Área interditada para limpeza";
+  if (!stalls?.length) return "Carregando status ao vivo";
+
+  const freeCount = stalls.filter((stall) => !stall.occupied).length;
+  return `${freeCount}/${stalls.length} livres agora`;
+}
+
+function getFooter(queueLength: number) {
+  return queueLength > 0 ? `Fila: ${queueLength} esperando` : "Fila vazia";
+}
+
+async function showStatusNotification(
+  stalls: Stall[] | null,
+  bathroom: BathroomState | null,
+  queueLength: number,
+) {
   await ensureStatusChannel();
-  await LocalNotifications.schedule({
-    notifications: [
-      {
-        id: STATUS_NOTIFICATION_ID,
-        title: "Tá Ocupado?",
-        body,
-        largeBody: body,
-        summaryText: "Status ao vivo",
-        channelId: STATUS_CHANNEL_ID,
-        ongoing: true,
-        autoCancel: false,
-        silent: true,
-      },
-    ],
+
+  const NativeStatusPanel = await getNativeStatusPanelPlugin();
+  await NativeStatusPanel.update({
+    cleaning: bathroom?.cleaning ?? false,
+    summary: getSummary(stalls, bathroom),
+    footer: getFooter(queueLength),
+    stallOne: toNativeStall(stalls?.[0], 1),
+    stallTwo: toNativeStall(stalls?.[1], 2),
   });
 }
 
 async function cancelStatusNotification() {
-  const { LocalNotifications } = await import("@capacitor/local-notifications");
-  await LocalNotifications.cancel({ notifications: [{ id: STATUS_NOTIFICATION_ID }] });
+  const NativeStatusPanel = await getNativeStatusPanelPlugin();
+  await NativeStatusPanel.cancel();
 }
 
 export function useNativeStatusPanel(
@@ -78,8 +102,8 @@ export function useNativeStatusPanel(
 ) {
   const [available, setAvailable] = useState(false);
   const [enabled, setEnabled] = useState(false);
-  const body = useMemo(
-    () => formatStatus(stalls, bathroom, queueLength),
+  const snapshot = useMemo(
+    () => ({ stalls, bathroom, queueLength }),
     [stalls, bathroom, queueLength],
   );
 
@@ -103,10 +127,12 @@ export function useNativeStatusPanel(
 
   useEffect(() => {
     if (!available || !enabled) return;
-    showStatusNotification(body).catch((error) => {
-      console.warn("Não foi possível atualizar o painel nativo.", error);
-    });
-  }, [available, body, enabled]);
+    showStatusNotification(snapshot.stalls, snapshot.bathroom, snapshot.queueLength).catch(
+      (error) => {
+        console.warn("Não foi possível atualizar o painel nativo.", error);
+      },
+    );
+  }, [available, enabled, snapshot]);
 
   const enable = useCallback(async () => {
     if (!available) return false;
@@ -114,9 +140,9 @@ export function useNativeStatusPanel(
     if (!granted) return false;
     window.localStorage.setItem(STORAGE_KEY, "1");
     setEnabled(true);
-    await showStatusNotification(body);
+    await showStatusNotification(snapshot.stalls, snapshot.bathroom, snapshot.queueLength);
     return true;
-  }, [available, body]);
+  }, [available, snapshot]);
 
   const disable = useCallback(async () => {
     window.localStorage.removeItem(STORAGE_KEY);

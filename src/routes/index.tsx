@@ -3,13 +3,20 @@ import {
   Bell,
   Brush,
   Crosshair,
+  Flag,
+  Image as ImageIcon,
   Lock,
   MapPin,
   MapPinOff,
+  MessageSquare,
   Minimize2,
+  Pencil,
+  Plus,
   Save,
+  Send,
   ShieldCheck,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   useCallback,
@@ -25,8 +32,6 @@ import { useStalls } from "@/lib/stalls";
 import { useNativeStatusPanel } from "@/lib/native-status-panel";
 import { cn } from "@/lib/utils";
 import { Badge, FloodAlert, StallCard } from "@/components/stalls-ui";
-
-const ADMIN_PASSWORD = "AchouASenhaTambem?";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -244,6 +249,641 @@ function QueueRail({
   );
 }
 
+const MAX_REPORT_IMAGE_LENGTH = 220000;
+const MAX_SOURCE_IMAGE_BYTES = 8 * 1024 * 1024;
+
+async function imageFileToDataUrl(file: File) {
+  if (!file.type.startsWith("image/")) throw new Error("Arquivo inválido.");
+  if (file.size > MAX_SOURCE_IMAGE_BYTES) throw new Error("Imagem muito pesada.");
+
+  const imageUrl = URL.createObjectURL(file);
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const nextImage = new Image();
+    nextImage.onload = () => resolve(nextImage);
+    nextImage.onerror = reject;
+    nextImage.src = imageUrl;
+  });
+
+  const maxSide = 720;
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Imagem inválida.");
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  URL.revokeObjectURL(imageUrl);
+
+  for (const quality of [0.68, 0.54, 0.42]) {
+    const dataUrl = canvas.toDataURL("image/jpeg", quality);
+    if (dataUrl.length <= MAX_REPORT_IMAGE_LENGTH) {
+      return dataUrl;
+    }
+  }
+
+  throw new Error("Imagem muito pesada.");
+}
+
+function ReportImagePicker({
+  imageDataUrl,
+  onChange,
+  disabled,
+  compact = false,
+}: {
+  imageDataUrl: string | null;
+  onChange: (imageDataUrl: string | null) => void;
+  disabled: boolean;
+  compact?: boolean;
+}) {
+  const [error, setError] = useState("");
+
+  const pickImage = async (file: File | undefined) => {
+    if (!file) return;
+    setError("");
+    try {
+      onChange(await imageFileToDataUrl(file));
+    } catch {
+      setError("Imagem grande demais. Tente uma foto mais leve.");
+    }
+  };
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <label
+          className={cn(
+            "inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-border bg-background/60 px-3 text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground",
+            disabled && "cursor-not-allowed opacity-50",
+          )}
+        >
+          <ImageIcon className="size-4" />
+          Câmera/galeria
+          <input
+            type="file"
+            accept="image/*"
+            aria-label="Anexar imagem da câmera ou galeria"
+            disabled={disabled}
+            onChange={(event) => pickImage(event.target.files?.[0])}
+            className="sr-only"
+          />
+        </label>
+        {imageDataUrl && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            disabled={disabled}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-busy/50 bg-busy/10 px-3 text-xs font-bold uppercase tracking-wide text-busy transition-colors hover:bg-busy/20"
+          >
+            <X className="size-4" />
+            Remover
+          </button>
+        )}
+        {error && <span className="text-xs font-semibold text-busy">{error}</span>}
+      </div>
+      {imageDataUrl && (
+        <img
+          src={imageDataUrl}
+          alt=""
+          className={cn(
+            "w-full rounded-lg border border-border object-cover",
+            compact ? "max-h-40" : "max-h-72",
+          )}
+        />
+      )}
+    </div>
+  );
+}
+
+function SpoilerImage({ src, className }: { src: string; className?: string }) {
+  const [revealed, setRevealed] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
+
+  useEffect(() => {
+    if (!viewerOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setViewerOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [viewerOpen]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => (revealed ? setViewerOpen(true) : setRevealed(true))}
+        className={cn(
+          "group relative block w-full cursor-pointer overflow-hidden rounded-lg border border-border bg-background text-left",
+          className,
+        )}
+        aria-label={revealed ? "Abrir imagem" : "Revelar imagem"}
+      >
+        <img
+          src={src}
+          alt=""
+          className={cn(
+            "w-full object-cover transition duration-300",
+            !revealed && "scale-105 blur-xl brightness-75",
+          )}
+        />
+        {!revealed ? (
+          <span className="absolute inset-0 flex items-center justify-center bg-background/30 px-4 text-center text-xs font-bold uppercase tracking-wide text-foreground backdrop-blur-[1px]">
+            Tocar para ver imagem
+          </span>
+        ) : (
+          <span className="pointer-events-none absolute bottom-2 right-2 rounded-md border border-border bg-background/80 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
+            ampliar
+          </span>
+        )}
+      </button>
+
+      {viewerOpen && (
+        <div
+          className="fixed inset-0 z-[120] flex cursor-zoom-out items-center justify-center bg-black/90 p-3 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Visualizador de imagem"
+          onClick={() => setViewerOpen(false)}
+        >
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setViewerOpen(false);
+            }}
+            className="absolute right-3 top-3 inline-flex size-10 cursor-pointer items-center justify-center rounded-lg border border-white/20 bg-black/60 text-white transition-colors hover:bg-white/10"
+            aria-label="Fechar imagem"
+          >
+            <X className="size-5" />
+          </button>
+          <img
+            src={src}
+            alt=""
+            onClick={(event) => event.stopPropagation()}
+            className="max-h-[92vh] max-w-[96vw] cursor-default rounded-lg object-contain shadow-2xl"
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+function reporterLabel(ticket: string) {
+  return `anon ${ticket.slice(-4).toUpperCase()}`;
+}
+
+function formatReportTime(value: string) {
+  return new Date(value).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function ReportCommentForm({
+  reportId,
+  disabled,
+  onSubmit,
+}: {
+  reportId: string;
+  disabled: boolean;
+  onSubmit: ReturnType<typeof useStalls>["submitStallReportComment"];
+}) {
+  const [message, setMessage] = useState("");
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (disabled || pending || (message.trim().length < 1 && !imageDataUrl)) return;
+    setPending(true);
+    const sent = await onSubmit(reportId, message, imageDataUrl);
+    setPending(false);
+    if (sent) {
+      setMessage("");
+      setImageDataUrl(null);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="grid gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+        <input
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          disabled={disabled}
+          maxLength={180}
+          placeholder="Responder..."
+          className={cn(
+            "h-9 min-w-0 rounded-lg border border-input bg-card px-3 text-sm font-semibold text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-free",
+            disabled && "cursor-not-allowed opacity-50",
+          )}
+        />
+        <button
+          type="submit"
+          disabled={disabled || pending || (message.trim().length < 1 && !imageDataUrl)}
+          className={cn(
+            "inline-flex size-9 items-center justify-center rounded-lg border border-free/60 bg-free/15 text-free transition-colors hover:bg-free/25",
+            (disabled || pending || (message.trim().length < 1 && !imageDataUrl)) &&
+              "cursor-not-allowed opacity-50",
+          )}
+          aria-label="Enviar comentário"
+        >
+          <Send className="size-4" />
+        </button>
+      </div>
+      <ReportImagePicker
+        imageDataUrl={imageDataUrl}
+        onChange={setImageDataUrl}
+        disabled={disabled || pending}
+        compact
+      />
+    </form>
+  );
+}
+
+function StallReports({
+  stalls,
+  reports,
+  comments,
+  reactions,
+  reactionOptions,
+  reportStatus,
+  ticket,
+  adminUnlocked,
+  adminToken,
+  disabled,
+  onSubmit,
+  onComment,
+  onReact,
+  onUpdate,
+  onRemove,
+}: {
+  stalls: ReturnType<typeof useStalls>["stalls"];
+  reports: ReturnType<typeof useStalls>["reports"];
+  comments: ReturnType<typeof useStalls>["reportComments"];
+  reactions: ReturnType<typeof useStalls>["reportReactions"];
+  reactionOptions: ReturnType<typeof useStalls>["reportReactionsList"];
+  reportStatus: ReturnType<typeof useStalls>["reportStatus"];
+  ticket: ReturnType<typeof useStalls>["ticket"];
+  adminUnlocked: boolean;
+  adminToken: string;
+  disabled: boolean;
+  onSubmit: ReturnType<typeof useStalls>["submitStallReport"];
+  onComment: ReturnType<typeof useStalls>["submitStallReportComment"];
+  onReact: ReturnType<typeof useStalls>["reactToStallReport"];
+  onUpdate: ReturnType<typeof useStalls>["updateStallReport"];
+  onRemove: ReturnType<typeof useStalls>["removeStallReport"];
+}) {
+  const [selectedStallId, setSelectedStallId] = useState("");
+  const [message, setMessage] = useState("");
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [editingReportId, setEditingReportId] = useState<string | null>(null);
+  const [editMessage, setEditMessage] = useState("");
+  const [editImageDataUrl, setEditImageDataUrl] = useState<string | null>(null);
+  const [editPending, setEditPending] = useState(false);
+  const [reactionPickerReportId, setReactionPickerReportId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedStallId && stalls?.[0]) setSelectedStallId(stalls[0].id);
+  }, [selectedStallId, stalls]);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (disabled || pending || (message.trim().length < 2 && !imageDataUrl)) return;
+    setPending(true);
+    const sent = await onSubmit(selectedStallId, message, imageDataUrl);
+    setPending(false);
+    if (sent) {
+      setMessage("");
+      setImageDataUrl(null);
+    }
+  };
+
+  const sendReaction = async (reportId: string, emoji: string) => {
+    const reacted = await onReact(reportId, emoji);
+    if (reacted) setReactionPickerReportId(null);
+  };
+
+  const beginEdit = (report: ReturnType<typeof useStalls>["reports"][number]) => {
+    setEditingReportId(report.id);
+    setEditMessage(report.message);
+    setEditImageDataUrl(report.image_data_url);
+  };
+
+  const cancelEdit = () => {
+    setEditingReportId(null);
+    setEditMessage("");
+    setEditImageDataUrl(null);
+  };
+
+  const submitEdit = async (
+    event: FormEvent,
+    report: ReturnType<typeof useStalls>["reports"][number],
+  ) => {
+    event.preventDefault();
+    if (editPending || (editMessage.trim().length < 2 && !editImageDataUrl)) return;
+    setEditPending(true);
+    const saved = await onUpdate(
+      report.id,
+      editMessage,
+      editImageDataUrl,
+      adminUnlocked ? adminToken : undefined,
+    );
+    setEditPending(false);
+    if (saved) cancelEdit();
+  };
+
+  const removeReport = async (report: ReturnType<typeof useStalls>["reports"][number]) => {
+    const confirmed = window.confirm("Remover este post do mural?");
+    if (!confirmed) return;
+    await onRemove(report.id, adminUnlocked ? adminToken : undefined);
+    if (editingReportId === report.id) cancelEdit();
+  };
+
+  return (
+    <section className="grid min-w-0 gap-3 rounded-lg border border-border bg-card/95 p-3">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-2 text-display text-3xl leading-none">
+            <MessageSquare className="size-5 text-free" />
+            Mural
+          </h2>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {reports.length} registro{reports.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        {reportStatus === "sent" && <Badge tone="free">enviado</Badge>}
+        {reportStatus === "failed" && <Badge tone="warn">falhou</Badge>}
+      </div>
+
+      <form onSubmit={submit} className="grid gap-2">
+        <div className="grid grid-cols-2 gap-2">
+          {stalls?.map((stall) => (
+            <button
+              key={stall.id}
+              type="button"
+              onClick={() => setSelectedStallId(stall.id)}
+              disabled={disabled}
+              className={cn(
+                "inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold uppercase tracking-wide transition-colors",
+                selectedStallId === stall.id
+                  ? "border-free/70 bg-free/15 text-free"
+                  : "border-border bg-background/60 text-muted-foreground hover:text-foreground",
+                disabled && "cursor-not-allowed opacity-50",
+              )}
+            >
+              <Flag className="size-4" />
+              {stall.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <textarea
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            disabled={disabled}
+            maxLength={220}
+            rows={2}
+            placeholder="Piso do banheiro está molhado."
+            className={cn(
+              "min-h-20 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm font-semibold text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-free",
+              disabled && "cursor-not-allowed opacity-50",
+            )}
+          />
+          <button
+            type="submit"
+            disabled={disabled || pending || (message.trim().length < 2 && !imageDataUrl)}
+            className={cn(
+              iconButtonClass(true),
+              "h-12 sm:h-full sm:min-w-28",
+              (disabled || pending || (message.trim().length < 2 && !imageDataUrl)) &&
+                "cursor-not-allowed opacity-50",
+            )}
+          >
+            <Send className="size-4" />
+            {pending ? "Enviando" : "Enviar"}
+          </button>
+        </div>
+        <ReportImagePicker
+          imageDataUrl={imageDataUrl}
+          onChange={setImageDataUrl}
+          disabled={disabled || pending}
+        />
+      </form>
+
+      <div className="grid gap-2">
+        {reports.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border bg-background/35 px-3 py-4 text-center text-xs font-bold uppercase tracking-wide text-muted-foreground">
+            mural limpo
+          </div>
+        ) : (
+          reports.map((report) => {
+            const reportComments = comments.filter((comment) => comment.report_id === report.id);
+            const reportReactions = reactions.filter(
+              (reaction) => reaction.report_id === report.id,
+            );
+            const reactionCounts = reactionOptions
+              .map((emoji) => ({
+                emoji,
+                count: reportReactions.filter((reaction) => reaction.emoji === emoji).length,
+              }))
+              .filter((reaction) => reaction.count > 0);
+            const canManageReport = adminUnlocked || report.reporter_ticket === ticket;
+            const isEditing = editingReportId === report.id;
+            const reactionPickerOpen = reactionPickerReportId === report.id;
+            return (
+              <article
+                key={report.id}
+                className="grid gap-3 rounded-lg border border-border bg-background/45 p-3"
+              >
+                <div className="flex min-w-0 items-start justify-between gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <Badge tone="neutral">{report.stall_label}</Badge>
+                    <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                      {reporterLabel(report.reporter_ticket)}
+                    </span>
+                    <span className="text-xs font-semibold text-muted-foreground">
+                      {formatReportTime(report.created_at)}
+                    </span>
+                    {report.updated_at && report.updated_at !== report.created_at && (
+                      <span className="text-xs font-semibold text-muted-foreground">editado</span>
+                    )}
+                  </div>
+                  {canManageReport && (
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => (isEditing ? cancelEdit() : beginEdit(report))}
+                        className="inline-flex size-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:text-foreground"
+                        aria-label={isEditing ? "Cancelar edicao do post" : "Editar post"}
+                        title={isEditing ? "Cancelar" : "Editar"}
+                      >
+                        {isEditing ? <X className="size-4" /> : <Pencil className="size-4" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeReport(report)}
+                        className="inline-flex size-8 items-center justify-center rounded-lg border border-busy/50 bg-busy/10 text-busy transition-colors hover:bg-busy/20"
+                        aria-label="Remover post"
+                        title="Remover"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {isEditing ? (
+                  <form
+                    onSubmit={(event) => submitEdit(event, report)}
+                    className="grid gap-2 rounded-lg border border-free/40 bg-free/5 p-2"
+                  >
+                    <textarea
+                      value={editMessage}
+                      onChange={(event) => setEditMessage(event.target.value)}
+                      disabled={editPending}
+                      maxLength={220}
+                      rows={2}
+                      className={cn(
+                        "min-h-20 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm font-semibold text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-free",
+                        editPending && "cursor-not-allowed opacity-50",
+                      )}
+                    />
+                    <ReportImagePicker
+                      imageDataUrl={editImageDataUrl}
+                      onChange={setEditImageDataUrl}
+                      disabled={editPending}
+                      compact
+                    />
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        disabled={editPending}
+                        className={cn(iconButtonClass(), editPending && "cursor-not-allowed")}
+                      >
+                        <X className="size-4" />
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={
+                          editPending || (editMessage.trim().length < 2 && !editImageDataUrl)
+                        }
+                        className={cn(
+                          iconButtonClass(true),
+                          (editPending || (editMessage.trim().length < 2 && !editImageDataUrl)) &&
+                            "cursor-not-allowed opacity-50",
+                        )}
+                      >
+                        <Save className="size-4" />
+                        {editPending ? "Salvando" : "Salvar"}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    {report.message && (
+                      <p className="break-words text-sm font-semibold text-foreground">
+                        {report.message}
+                      </p>
+                    )}
+                    {report.image_data_url && (
+                      <SpoilerImage src={report.image_data_url} className="max-h-96" />
+                    )}
+                  </>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {reactionCounts.map(({ emoji, count }) => (
+                    <span
+                      key={emoji}
+                      className="inline-flex h-8 min-w-12 items-center justify-center gap-1 rounded-lg border border-free/60 bg-free/15 px-2 text-sm font-bold text-free"
+                      aria-label={`${count} reacoes com ${emoji}`}
+                    >
+                      <span>{emoji}</span>
+                      <span className="text-[11px] tabular-nums">{count}</span>
+                    </span>
+                  ))}
+
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReactionPickerReportId((current) =>
+                          current === report.id ? null : report.id,
+                        )
+                      }
+                      disabled={disabled}
+                      className={cn(
+                        "inline-flex size-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-free/70 hover:bg-free/10 hover:text-free",
+                        reactionPickerOpen && "border-free/70 bg-free/15 text-free",
+                        disabled && "cursor-not-allowed opacity-50",
+                      )}
+                      aria-label="Adicionar reacao"
+                      title="Reagir"
+                    >
+                      <Plus className="size-4" />
+                    </button>
+
+                    {reactionPickerOpen && (
+                      <div className="absolute bottom-10 left-0 z-30 grid w-52 grid-cols-7 gap-1 rounded-lg border border-border bg-card p-2 shadow-2xl">
+                        {reactionOptions.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => sendReaction(report.id, emoji)}
+                            className="inline-flex size-7 items-center justify-center rounded-md text-base transition-colors hover:bg-free/15"
+                            aria-label={`Reagir com ${emoji}`}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid gap-2 rounded-lg border border-border/70 bg-card/45 p-2">
+                  {reportComments.length > 0 && (
+                    <div className="grid gap-1">
+                      {reportComments.slice(-4).map((comment) => (
+                        <div
+                          key={comment.id}
+                          className="rounded-md bg-background/55 px-2 py-1.5 text-sm"
+                        >
+                          <span className="mr-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                            {reporterLabel(comment.commenter_ticket)}
+                          </span>
+                          {comment.message && (
+                            <span className="break-words font-semibold">{comment.message}</span>
+                          )}
+                          {comment.image_data_url && (
+                            <SpoilerImage src={comment.image_data_url} className="mt-2 max-h-52" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <ReportCommentForm
+                    reportId={report.id}
+                    disabled={disabled}
+                    onSubmit={onComment}
+                  />
+                </div>
+              </article>
+            );
+          })
+        )}
+      </div>
+    </section>
+  );
+}
+
 function AdminAccess({
   bathroom,
   stalls,
@@ -251,6 +891,7 @@ function AdminAccess({
   geo,
   unlocked,
   onUnlockChange,
+  onAdminTokenChange,
   toggle,
   toggleCleaning,
   setBathroomLocation,
@@ -259,6 +900,7 @@ function AdminAccess({
   locationTogglePending,
   removeQueueTicket,
   testQueueNotification,
+  verifyAdminPassword,
   notificationPermission,
   notificationStatus,
 }: {
@@ -268,6 +910,7 @@ function AdminAccess({
   geo: ReturnType<typeof useStalls>["geo"];
   unlocked: boolean;
   onUnlockChange: (unlocked: boolean) => void;
+  onAdminTokenChange: (token: string) => void;
   toggle: ReturnType<typeof useStalls>["toggle"];
   toggleCleaning: (admin?: boolean) => void;
   setBathroomLocation: (lat: number, lng: number, radius_m: number) => void;
@@ -276,6 +919,7 @@ function AdminAccess({
   locationTogglePending: ReturnType<typeof useStalls>["locationTogglePending"];
   removeQueueTicket: ReturnType<typeof useStalls>["removeQueueTicket"];
   testQueueNotification: ReturnType<typeof useStalls>["testQueueNotification"];
+  verifyAdminPassword: ReturnType<typeof useStalls>["verifyAdminPassword"];
   notificationPermission: ReturnType<typeof useStalls>["notificationPermission"];
   notificationStatus: ReturnType<typeof useStalls>["notificationStatus"];
 }) {
@@ -292,21 +936,26 @@ function AdminAccess({
     setRadius(String(bathroom?.radius_m ?? ""));
   }, [bathroom?.lat, bathroom?.lng, bathroom?.radius_m]);
 
-  const unlock = (event: FormEvent) => {
+  const unlock = async (event: FormEvent) => {
     event.preventDefault();
-    if (password !== ADMIN_PASSWORD) {
+    const token = await verifyAdminPassword(password);
+    if (!token) {
       setError("Senha errada.");
       return;
     }
     setError("");
     setPassword("");
+    onAdminTokenChange(token);
     onUnlockChange(true);
     window.sessionStorage.setItem("tao-admin", "1");
+    window.sessionStorage.setItem("tao-admin-token", token);
   };
 
   const lock = () => {
     onUnlockChange(false);
+    onAdminTokenChange("");
     window.sessionStorage.removeItem("tao-admin");
+    window.sessionStorage.removeItem("tao-admin-token");
   };
 
   const saveLocation = () => {
@@ -610,6 +1259,12 @@ function Index() {
     dismissFlood,
     queue,
     queueEmotes,
+    reports,
+    reportComments,
+    reportReactions,
+    reportReactionsList,
+    reportStatus,
+    ticket,
     inQueue,
     position,
     myTurn,
@@ -619,13 +1274,22 @@ function Index() {
     joinQueue,
     leaveQueue,
     removeQueueTicket,
+    submitStallReport,
+    submitStallReportComment,
+    updateStallReport,
+    removeStallReport,
+    reactToStallReport,
     testQueueNotification,
+    verifyAdminPassword,
     sendQueueEmote,
   } = useStalls();
   const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [adminToken, setAdminToken] = useState("");
 
   useEffect(() => {
-    setAdminUnlocked(window.sessionStorage.getItem("tao-admin") === "1");
+    const token = window.sessionStorage.getItem("tao-admin-token") ?? "";
+    setAdminToken(token);
+    setAdminUnlocked(window.sessionStorage.getItem("tao-admin") === "1" && token.length > 0);
   }, []);
 
   const cleaning = bathroom?.cleaning ?? false;
@@ -662,6 +1326,7 @@ function Index() {
           geo={geo}
           unlocked={adminUnlocked}
           onUnlockChange={setAdminUnlocked}
+          onAdminTokenChange={setAdminToken}
           toggle={toggle}
           toggleCleaning={toggleCleaning}
           setBathroomLocation={setBathroomLocation}
@@ -670,6 +1335,7 @@ function Index() {
           locationTogglePending={locationTogglePending}
           removeQueueTicket={removeQueueTicket}
           testQueueNotification={testQueueNotification}
+          verifyAdminPassword={verifyAdminPassword}
           notificationPermission={notificationPermission}
           notificationStatus={notificationStatus}
         />
@@ -774,18 +1440,37 @@ function Index() {
           Carregando status...
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {stalls.map((s) => (
-            <StallCard
-              key={s.id}
-              stall={s}
-              blocked={locked}
-              compact
-              onToggle={() => toggle(s, adminUnlocked)}
-              onCyclePaper={(roll) => cyclePaper(s, roll, adminUnlocked)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {stalls.map((s) => (
+              <StallCard
+                key={s.id}
+                stall={s}
+                blocked={locked}
+                compact
+                onToggle={() => toggle(s, adminUnlocked)}
+                onCyclePaper={(roll) => cyclePaper(s, roll, adminUnlocked)}
+              />
+            ))}
+          </div>
+          <StallReports
+            stalls={stalls}
+            reports={reports}
+            comments={reportComments}
+            reactions={reportReactions}
+            reactionOptions={reportReactionsList}
+            reportStatus={reportStatus}
+            ticket={ticket}
+            adminUnlocked={adminUnlocked}
+            adminToken={adminToken}
+            disabled={!adminUnlocked && (blocked || !geo.allowed)}
+            onSubmit={submitStallReport}
+            onComment={submitStallReportComment}
+            onReact={reactToStallReport}
+            onUpdate={updateStallReport}
+            onRemove={removeStallReport}
+          />
+        </>
       )}
 
       {!geo.allowed && (
@@ -805,6 +1490,7 @@ function Index() {
         geo={geo}
         unlocked={adminUnlocked}
         onUnlockChange={setAdminUnlocked}
+        onAdminTokenChange={setAdminToken}
         toggle={toggle}
         toggleCleaning={toggleCleaning}
         setBathroomLocation={setBathroomLocation}
@@ -813,6 +1499,7 @@ function Index() {
         locationTogglePending={locationTogglePending}
         removeQueueTicket={removeQueueTicket}
         testQueueNotification={testQueueNotification}
+        verifyAdminPassword={verifyAdminPassword}
         notificationPermission={notificationPermission}
         notificationStatus={notificationStatus}
       />

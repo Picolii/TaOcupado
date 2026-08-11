@@ -31,6 +31,31 @@ export type QueueEmote = {
   created_at: string;
   sender_position: number;
 };
+export type StallReport = {
+  id: string;
+  stall_id: string;
+  stall_label: string;
+  reporter_ticket: string;
+  message: string;
+  image_data_url: string | null;
+  created_at: string;
+  updated_at: string | null;
+};
+export type StallReportComment = {
+  id: string;
+  report_id: string;
+  commenter_ticket: string;
+  message: string;
+  image_data_url: string | null;
+  created_at: string;
+};
+export type StallReportReaction = {
+  id: string;
+  report_id: string;
+  reactor_ticket: string;
+  emoji: string;
+  created_at: string;
+};
 type QueueEmotePayload = {
   id?: string;
   sticker_url?: string;
@@ -43,6 +68,30 @@ const FLOOD_LIMIT = 5;
 const COOLDOWN_MS = 10000;
 const PAPER_DEBOUNCE_MS = 450;
 const EMOTE_WINDOW_MS = 9000;
+const REPORT_DEBOUNCE_MS = 2500;
+const REPORT_LIMIT = 24;
+const COMMENT_DEBOUNCE_MS = 1200;
+const COMMENT_LIMIT = 120;
+const REACTION_LIMIT = 240;
+const STALL_REPORT_SELECT =
+  "id,stall_id,stall_label,reporter_ticket,message,image_data_url,created_at,updated_at";
+
+export const STALL_REPORT_REACTIONS = [
+  "🔥",
+  "💀",
+  "🤢",
+  "🧻",
+  "🚨",
+  "👏",
+  "😱",
+  "🤮",
+  "😭",
+  "🫡",
+  "🧼",
+  "👀",
+  "⚠️",
+  "🏆",
+] as const;
 
 export const FIXED_BATHROOM_LOCATION = {
   lat: -27.124368,
@@ -195,6 +244,21 @@ function getTicket() {
   return t;
 }
 
+function getOwnerSecret() {
+  if (typeof window === "undefined") return "";
+  let secret = window.localStorage.getItem("tao-owner-secret");
+  if (!secret) {
+    secret =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random()
+            .toString(36)
+            .slice(2)}`;
+    window.localStorage.setItem("tao-owner-secret", secret);
+  }
+  return secret;
+}
+
 function canUseServiceWorkerNotifications() {
   if (typeof window === "undefined" || typeof navigator === "undefined") return false;
   return (
@@ -253,7 +317,12 @@ export function useStalls() {
   const [bathroom, setBathroom] = useState<BathroomState | null>(null);
   const [queue, setQueue] = useState<QueueTicket[]>([]);
   const [queueEmotes, setQueueEmotes] = useState<QueueEmote[]>([]);
+  const [reports, setReports] = useState<StallReport[]>([]);
+  const [reportComments, setReportComments] = useState<StallReportComment[]>([]);
+  const [reportReactions, setReportReactions] = useState<StallReportReaction[]>([]);
+  const [reportStatus, setReportStatus] = useState<"idle" | "sent" | "failed">("idle");
   const [ticket, setTicket] = useState("");
+  const [ownerSecret, setOwnerSecret] = useState("");
   const [live, setLive] = useState(false);
   const [floodAlert, setFloodAlert] = useState<string | null>(null);
   const [blockNote, setBlockNote] = useState<string | null>(null);
@@ -268,6 +337,8 @@ export function useStalls() {
   const cooldownUntil = useRef(0);
   const clicks = useRef<number[]>([]);
   const paperTouches = useRef<Record<string, number>>({});
+  const lastReportAt = useRef(0);
+  const lastCommentAt = useRef<Record<string, number>>({});
   const floodCount = useRef(0);
   const notified = useRef(false);
   const liveChannel = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -275,7 +346,10 @@ export function useStalls() {
   const pendingLocationRequired = useRef<boolean | null>(null);
   const supportsLocationRequiredColumn = useRef(true);
 
-  useEffect(() => setTicket(getTicket()), []);
+  useEffect(() => {
+    setTicket(getTicket());
+    setOwnerSecret(getOwnerSecret());
+  }, []);
 
   useEffect(() => {
     bathroomRef.current = bathroom;
@@ -295,6 +369,45 @@ export function useStalls() {
     if (data) setQueue(data as QueueTicket[]);
   }, []);
 
+  const loadReports = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("stall_reports")
+      .select(STALL_REPORT_SELECT)
+      .order("created_at", { ascending: false })
+      .limit(REPORT_LIMIT);
+    if (error) {
+      console.warn("Não foi possível carregar o mural de ocorrências.", error.message);
+      return;
+    }
+    if (data) setReports(data as StallReport[]);
+  }, []);
+
+  const loadReportComments = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("stall_report_comments")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .limit(COMMENT_LIMIT);
+    if (error) {
+      console.warn("Não foi possível carregar os comentários do mural.", error.message);
+      return;
+    }
+    if (data) setReportComments(data as StallReportComment[]);
+  }, []);
+
+  const loadReportReactions = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("stall_report_reactions")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(REACTION_LIMIT);
+    if (error) {
+      console.warn("Não foi possível carregar as reações do mural.", error.message);
+      return;
+    }
+    if (data) setReportReactions(data as StallReportReaction[]);
+  }, []);
+
   useEffect(() => {
     let active = true;
 
@@ -310,6 +423,9 @@ export function useStalls() {
         setBathroom(normalizeBathroomState(b as BathroomPayload));
       }
       loadQueue();
+      loadReports();
+      loadReportComments();
+      loadReportReactions();
     })();
 
     const channel = supabase
@@ -342,6 +458,19 @@ export function useStalls() {
       .on("postgres_changes", { event: "*", schema: "public", table: "queue_tickets" }, () =>
         loadQueue(),
       )
+      .on("postgres_changes", { event: "*", schema: "public", table: "stall_reports" }, () =>
+        loadReports(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "stall_report_comments" },
+        () => loadReportComments(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "stall_report_reactions" },
+        () => loadReportReactions(),
+      )
       .on("broadcast", { event: "queue-emote" }, ({ payload }: { payload: QueueEmotePayload }) => {
         if (!payload.sticker_url) return;
         if (!QUEUE_STICKERS.includes(payload.sticker_url as (typeof QUEUE_STICKERS)[number])) {
@@ -369,7 +498,7 @@ export function useStalls() {
       liveChannel.current = null;
       supabase.removeChannel(channel);
     };
-  }, [loadQueue]);
+  }, [loadQueue, loadReportComments, loadReportReactions, loadReports]);
 
   const geo = useGeoGate(bathroom);
 
@@ -641,6 +770,15 @@ export function useStalls() {
     return notifyMyTurn();
   }, [notifyMyTurn, requestQueueNotifications]);
 
+  const verifyAdminPassword = async (password: string) => {
+    const { data, error } = await supabase.rpc("verify_admin", { admin_password: password });
+    if (error || !data) {
+      console.warn("Nao foi possivel liberar o ADM.", error?.message ?? "sem token");
+      return null;
+    }
+    return data;
+  };
+
   const position = queue.findIndex((q) => q.ticket === ticket);
   const inQueue = position >= 0;
 
@@ -661,6 +799,191 @@ export function useStalls() {
   const removeQueueTicket = async (ticketId: string) => {
     await supabase.from("queue_tickets").delete().eq("id", ticketId);
     loadQueue();
+  };
+
+  const submitStallReport = async (
+    stallId: string,
+    rawMessage: string,
+    imageDataUrl?: string | null,
+  ) => {
+    const stall = stalls?.find((item) => item.id === stallId);
+    const message = rawMessage.replace(/\s+/g, " ").trim();
+    const image_data_url = imageDataUrl ?? null;
+    if (!stall || !ticket || !ownerSecret || message.length > 220) return false;
+    if (message.length < 2 && !image_data_url) return false;
+
+    const now = Date.now();
+    if (now - lastReportAt.current < REPORT_DEBOUNCE_MS) return false;
+    lastReportAt.current = now;
+    setReportStatus("idle");
+
+    const { data, error } = await supabase
+      .from("stall_reports")
+      .insert({
+        stall_id: stall.id,
+        stall_label: stall.label,
+        reporter_ticket: ticket,
+        owner_secret: ownerSecret,
+        message,
+        image_data_url,
+      })
+      .select(STALL_REPORT_SELECT)
+      .single();
+
+    if (error) {
+      setReportStatus("failed");
+      console.warn("Não foi possível publicar a ocorrência.", error.message);
+      return false;
+    }
+
+    if (data) {
+      setReports((prev) =>
+        [data as StallReport, ...prev.filter((report) => report.id !== data.id)].slice(
+          0,
+          REPORT_LIMIT,
+        ),
+      );
+    }
+    setReportStatus("sent");
+    return true;
+  };
+
+  const submitStallReportComment = async (
+    reportId: string,
+    rawMessage: string,
+    imageDataUrl?: string | null,
+  ) => {
+    const message = rawMessage.replace(/\s+/g, " ").trim();
+    const image_data_url = imageDataUrl ?? null;
+    if (!ticket || !reports.some((report) => report.id === reportId)) return false;
+    if (message.length > 180) return false;
+    if (message.length < 1 && !image_data_url) return false;
+
+    const now = Date.now();
+    if (now - (lastCommentAt.current[reportId] ?? 0) < COMMENT_DEBOUNCE_MS) return false;
+    lastCommentAt.current[reportId] = now;
+
+    const { data, error } = await supabase
+      .from("stall_report_comments")
+      .insert({
+        report_id: reportId,
+        commenter_ticket: ticket,
+        message,
+        image_data_url,
+      })
+      .select("*")
+      .single();
+
+    if (error) {
+      console.warn("Não foi possível comentar no mural.", error.message);
+      return false;
+    }
+
+    if (data) {
+      setReportComments((prev) =>
+        [...prev.filter((comment) => comment.id !== data.id), data as StallReportComment].slice(
+          -COMMENT_LIMIT,
+        ),
+      );
+    }
+    return true;
+  };
+
+  const updateStallReport = async (
+    reportId: string,
+    rawMessage: string,
+    imageDataUrl?: string | null,
+    adminToken?: string,
+  ) => {
+    const report = reports.find((item) => item.id === reportId);
+    const message = rawMessage.replace(/\s+/g, " ").trim();
+    const image_data_url = imageDataUrl ?? null;
+    if (!ownerSecret || !report) return false;
+    if (!adminToken && report.reporter_ticket !== ticket) return false;
+    if (message.length > 220) return false;
+    if (message.length < 2 && !image_data_url) return false;
+
+    const { data, error } = await supabase.rpc("update_stall_report", {
+      report_id: reportId,
+      actor_owner_secret: ownerSecret,
+      admin_token: adminToken ?? "",
+      next_message: message,
+      next_image_data_url: image_data_url,
+    });
+
+    if (error) {
+      console.warn("Nao foi possivel editar a ocorrencia.", error.message);
+      return false;
+    }
+    if (!data) return false;
+
+    setReports((prev) => prev.map((item) => (item.id === reportId ? (data as StallReport) : item)));
+    return true;
+  };
+
+  const removeStallReport = async (reportId: string, adminToken?: string) => {
+    const report = reports.find((item) => item.id === reportId);
+    if (!ownerSecret || !report) return false;
+    if (!adminToken && report.reporter_ticket !== ticket) return false;
+
+    const { data, error } = await supabase.rpc("delete_stall_report", {
+      report_id: reportId,
+      actor_owner_secret: ownerSecret,
+      admin_token: adminToken ?? "",
+    });
+
+    if (error) {
+      console.warn("Nao foi possivel remover a ocorrencia.", error.message);
+      return false;
+    }
+    if (!data) return false;
+
+    setReports((prev) => prev.filter((item) => item.id !== reportId));
+    setReportComments((prev) => prev.filter((comment) => comment.report_id !== reportId));
+    setReportReactions((prev) => prev.filter((reaction) => reaction.report_id !== reportId));
+    return true;
+  };
+
+  const reactToStallReport = async (reportId: string, emoji: string) => {
+    if (
+      !ticket ||
+      !reports.some((report) => report.id === reportId) ||
+      !STALL_REPORT_REACTIONS.includes(emoji as (typeof STALL_REPORT_REACTIONS)[number])
+    ) {
+      return false;
+    }
+
+    const { error } = await supabase.from("stall_report_reactions").upsert(
+      {
+        report_id: reportId,
+        reactor_ticket: ticket,
+        emoji,
+      },
+      { onConflict: "report_id,reactor_ticket,emoji", ignoreDuplicates: true },
+    );
+
+    if (error) {
+      console.warn("Não foi possível reagir ao mural.", error.message);
+      return false;
+    }
+
+    const optimisticReaction: StallReportReaction = {
+      id: `local-${reportId}-${ticket}-${emoji}`,
+      report_id: reportId,
+      reactor_ticket: ticket,
+      emoji,
+      created_at: new Date().toISOString(),
+    };
+    setReportReactions((prev) => {
+      const exists = prev.some(
+        (reaction) =>
+          reaction.report_id === reportId &&
+          reaction.reactor_ticket === ticket &&
+          reaction.emoji === emoji,
+      );
+      return exists ? prev : [optimisticReaction, ...prev].slice(0, REACTION_LIMIT);
+    });
+    return true;
   };
 
   const sendQueueEmote = async (stickerUrl: string) => {
@@ -737,6 +1060,11 @@ export function useStalls() {
     },
     queue,
     queueEmotes,
+    reports,
+    reportComments,
+    reportReactions,
+    reportStatus,
+    reportReactionsList: STALL_REPORT_REACTIONS,
     ticket,
     inQueue,
     position,
@@ -746,9 +1074,15 @@ export function useStalls() {
     requestQueueNotifications,
     enableQueueNotifications,
     testQueueNotification,
+    verifyAdminPassword,
     joinQueue,
     leaveQueue,
     removeQueueTicket,
+    submitStallReport,
+    submitStallReportComment,
+    updateStallReport,
+    removeStallReport,
+    reactToStallReport,
     sendQueueEmote,
   };
 }
@@ -788,15 +1122,70 @@ const BUSY_JOKES: { min: number; text: string }[] = [
   },
 ];
 
+BUSY_JOKES.push(
+  { min: 0, text: "Entrada recente. O sistema segue civilizado." },
+  { min: 1, text: "Possível leitura rápida de embalagem em andamento." },
+  { min: 2, text: "Primeiros sinais de operação demorada detectados." },
+  { min: 3, text: "Sessão já passou do tutorial." },
+  { min: 4, text: "Começou o modo concentração suspeita." },
+  { min: 5, text: "O box começou a emitir sinais administrativos." },
+  { min: 7, text: "A reunião com o vaso já poderia ter ata." },
+  { min: 7, text: "Tempo suficiente para rever decisões pessoais." },
+  { min: 10, text: "A operação saiu do casual e entrou no corporativo." },
+  { min: 12, text: "O vaso pediu atualização de status no Jira." },
+  { min: 12, text: "Já cabe uma retrospectiva do sprint intestinal." },
+  { min: 15, text: "O box entrou em contrato de permanência mínima." },
+  { min: 18, text: "A porta deveria cobrar condomínio." },
+  { min: 18, text: "O silêncio ficou juridicamente preocupante." },
+  { min: 20, text: "O sistema considera enviar uma equipe de auditoria." },
+  { min: 24, text: "O vaso já reconhece o usuário pelo CPF emocional." },
+  { min: 28, text: "O banheiro mudou de status para novela das nove." },
+  { min: 28, text: "A descarga está olhando para o relógio." },
+  { min: 30, text: "A permanência passou do aceitável para o lendário." },
+  { min: 32, text: "O box abriu chamado para entender o que está acontecendo." },
+  { min: 32, text: "Isso deixou de ser necessidade e virou projeto." },
+  { min: 35, text: "O RH do banheiro abriu investigação interna." },
+  { min: 38, text: "A ocupação passou no compliance por pura teimosia." },
+  { min: 38, text: "A pia está evitando contato visual." },
+  { min: 40, text: "O box entrou em modo documentário investigativo." },
+  { min: 40, text: "Já tem gente chamando isso de patrimônio local." },
+  { min: 45, text: "O ocupante virou entidade administrativa do banheiro." },
+  { min: 48, text: "A porta pediu demissão e ninguém julgou." },
+  { min: 48, text: "O app recomenda verificar sinais vitais e dignidade." },
+  { min: 50, text: "A fila já formou uma comissão parlamentar de inquérito." },
+  { min: 50, text: "O vaso pediu férias depois dessa." },
+  { min: 55, text: "A situação saiu do banheiro e entrou para a mitologia da firma." },
+  { min: 55, text: "O tempo aqui já é medido em eras sanitárias." },
+  { min: 60, text: "Uma hora. O botão de ocupado precisa de terapia." },
+  { min: 65, text: "A descarga está negociando termos de rendição." },
+  { min: 65, text: "O banheiro já considera isso uma ocupação hostil." },
+  { min: 70, text: "O box adquiriu CEP próprio." },
+  { min: 70, text: "A ocupação já tem lore, trilha sonora e testemunhas." },
+  { min: 80, text: "O banheiro protocolou pedido de habeas corpus." },
+  { min: 80, text: "Alguém verifica se isso ainda é uso ou posse." },
+  { min: 90, text: "90 minutos. O vaso deixou de ser móvel e virou residência." },
+  { min: 90, text: "Isso já tem cara de franquia, temporada e spin-off." },
+  { min: 105, text: "O app recomenda água, coragem e uma conversa franca." },
+  { min: 105, text: "A ocupação atingiu status de evento corporativo." },
+  { min: 120, text: "Duas horas. Isso já precisa de ata, testemunha e perícia." },
+  { min: 120, text: "O banheiro não sabe mais quem está usando quem." },
+);
+
 export function useBusyMood(stall: Stall) {
-  const n = useTick(5 * 60 * 1000);
+  const n = useTick(60 * 1000);
   return useMemo(() => {
     const mins = Math.max(
       0,
       Math.floor((Date.now() - new Date(stall.changed_at).getTime()) / 60000),
     );
     const pool = BUSY_JOKES.filter((j) => mins >= j.min);
-    const joke = pool[n % pool.length] ?? BUSY_JOKES[0]!;
+    const currentMin = pool.reduce((max, jokeOption) => Math.max(max, jokeOption.min), 0);
+    const currentPool = pool.filter((jokeOption) => jokeOption.min === currentMin);
+    const timeBucket = Math.floor(mins / 2);
+    const seed = Array.from(
+      `${stall.id}:${stall.changed_at}:${currentMin}:${timeBucket}:${n}`,
+    ).reduce((total, char) => (total * 31 + char.charCodeAt(0)) | 0, 0);
+    const joke = currentPool[Math.abs(seed) % currentPool.length] ?? BUSY_JOKES[0]!;
     return {
       mins,
       joke: joke.text,
@@ -806,5 +1195,5 @@ export function useBusyMood(stall: Stall) {
       roast: mins >= 30,
       dead: mins >= 45,
     };
-  }, [stall.changed_at, n]);
+  }, [stall.changed_at, stall.id, n]);
 }

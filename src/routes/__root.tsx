@@ -12,6 +12,32 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
+const PRELOAD_RECOVERY_KEY = "tao-preload-recovered";
+
+function getPreloadRecovered() {
+  try {
+    return window.sessionStorage.getItem(PRELOAD_RECOVERY_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setPreloadRecovered() {
+  try {
+    window.sessionStorage.setItem(PRELOAD_RECOVERY_KEY, "1");
+  } catch {
+    /* Storage can be unavailable in restricted browser modes. */
+  }
+}
+
+function clearPreloadRecovered() {
+  try {
+    window.sessionStorage.removeItem(PRELOAD_RECOVERY_KEY);
+  } catch {
+    /* Storage can be unavailable in restricted browser modes. */
+  }
+}
+
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -123,6 +149,22 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   useEffect(() => {
+    const recoverFromStaleChunk = async (event: Event) => {
+      event.preventDefault();
+      if (getPreloadRecovered()) return;
+      setPreloadRecovered();
+      if ("serviceWorker" in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((registration) => registration.update()));
+      }
+      window.location.reload();
+    };
+
+    window.addEventListener("vite:preloadError", recoverFromStaleChunk);
+    return () => window.removeEventListener("vite:preloadError", recoverFromStaleChunk);
+  }, []);
+
+  useEffect(() => {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
     const safeProtocol =
       window.location.protocol === "https:" ||
@@ -131,6 +173,10 @@ function RootComponent() {
     navigator.serviceWorker.register("/sw.js").catch(() => {
       /* PWA is optional; the app still works without the registration. */
     });
+  }, []);
+
+  useEffect(() => {
+    clearPreloadRecovered();
   }, []);
 
   return (

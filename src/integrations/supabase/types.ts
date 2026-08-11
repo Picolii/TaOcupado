@@ -59,6 +59,117 @@ export type Database = {
         };
         Relationships: [];
       };
+      stall_report_comments: {
+        Row: {
+          commenter_ticket: string;
+          created_at: string;
+          id: string;
+          image_data_url: string | null;
+          message: string;
+          report_id: string;
+        };
+        Insert: {
+          commenter_ticket: string;
+          created_at?: string;
+          id?: string;
+          image_data_url?: string | null;
+          message: string;
+          report_id: string;
+        };
+        Update: {
+          commenter_ticket?: string;
+          created_at?: string;
+          id?: string;
+          image_data_url?: string | null;
+          message?: string;
+          report_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "stall_report_comments_report_id_fkey";
+            columns: ["report_id"];
+            isOneToOne: false;
+            referencedRelation: "stall_reports";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      stall_report_reactions: {
+        Row: {
+          created_at: string;
+          emoji: string;
+          id: string;
+          reactor_ticket: string;
+          report_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          emoji: string;
+          id?: string;
+          reactor_ticket: string;
+          report_id: string;
+        };
+        Update: {
+          created_at?: string;
+          emoji?: string;
+          id?: string;
+          reactor_ticket?: string;
+          report_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "stall_report_reactions_report_id_fkey";
+            columns: ["report_id"];
+            isOneToOne: false;
+            referencedRelation: "stall_reports";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      stall_reports: {
+        Row: {
+          created_at: string;
+          id: string;
+          image_data_url: string | null;
+          message: string;
+          owner_secret: string | null;
+          reporter_ticket: string;
+          stall_id: string;
+          stall_label: string;
+          updated_at: string | null;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          image_data_url?: string | null;
+          message: string;
+          owner_secret?: string | null;
+          reporter_ticket: string;
+          stall_id: string;
+          stall_label: string;
+          updated_at?: string | null;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          image_data_url?: string | null;
+          message?: string;
+          owner_secret?: string | null;
+          reporter_ticket?: string;
+          stall_id?: string;
+          stall_label?: string;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "stall_reports_stall_id_fkey";
+            columns: ["stall_id"];
+            isOneToOne: false;
+            referencedRelation: "stalls";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       stalls: {
         Row: {
           changed_at: string;
@@ -91,7 +202,30 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      delete_stall_report: {
+        Args: {
+          report_id: string;
+          actor_owner_secret: string;
+          admin_token: string;
+        };
+        Returns: string;
+      };
+      update_stall_report: {
+        Args: {
+          report_id: string;
+          actor_owner_secret: string;
+          admin_token: string;
+          next_message: string;
+          next_image_data_url: string | null;
+        };
+        Returns: Database["public"]["Tables"]["stall_reports"]["Row"];
+      };
+      verify_admin: {
+        Args: {
+          admin_password: string;
+        };
+        Returns: string;
+      };
     };
     Enums: {
       [_ in never]: never;

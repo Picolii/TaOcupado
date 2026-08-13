@@ -20,6 +20,7 @@ export type BathroomState = {
   lat: number | null;
   lng: number | null;
   location_required: boolean;
+  poop_rain_enabled: boolean;
   radius_m: number;
   changed_at: string;
 };
@@ -100,8 +101,8 @@ export const FIXED_BATHROOM_LOCATION = {
   label: "Andorinha, Itapema - SC",
 };
 
-type BathroomPayload = Omit<BathroomState, "location_required"> &
-  Partial<Pick<BathroomState, "location_required">>;
+type BathroomPayload = Omit<BathroomState, "location_required" | "poop_rain_enabled"> &
+  Partial<Pick<BathroomState, "location_required" | "poop_rain_enabled">>;
 
 function hasLocationRequiredColumn(row: BathroomPayload | null | undefined) {
   return !!row && Object.prototype.hasOwnProperty.call(row, "location_required");
@@ -114,6 +115,7 @@ function normalizeBathroomState(row: BathroomPayload | null | undefined): Bathro
     ...row,
     radius_m,
     location_required: row.location_required ?? radius_m !== 0,
+    poop_rain_enabled: row.poop_rain_enabled ?? true,
   };
 }
 
@@ -598,6 +600,47 @@ export function useStalls() {
     await supabase.from("bathroom_state").update(patch).eq("id", "main");
   };
 
+  const setPoopRainEnabled = async (poop_rain_enabled?: boolean) => {
+    const current = bathroomRef.current;
+    if (!current) return false;
+
+    const nextEnabled = poop_rain_enabled ?? !current.poop_rain_enabled;
+    const patch = {
+      poop_rain_enabled: nextEnabled,
+      changed_at: new Date().toISOString(),
+    };
+    const optimistic = { ...current, ...patch };
+    bathroomRef.current = optimistic;
+    setBathroom(optimistic);
+
+    const { data, error } = await supabase
+      .from("bathroom_state")
+      .update(patch)
+      .eq("id", "main")
+      .select("*")
+      .maybeSingle();
+
+    if (error?.code === "42703" || error?.code === "PGRST204") {
+      console.warn(
+        "A coluna poop_rain_enabled ainda nÃ£o existe no banco. Mantendo ajuste nesta aba.",
+        error.message,
+      );
+      return true;
+    }
+
+    if (error) {
+      bathroomRef.current = current;
+      setBathroom(current);
+      console.warn("NÃ£o foi possÃ­vel atualizar a chuva de coco.", error.message);
+      return false;
+    }
+
+    const saved = normalizeBathroomState(data as BathroomPayload | null) ?? optimistic;
+    bathroomRef.current = saved;
+    setBathroom(saved);
+    return true;
+  };
+
   const updateLocationRequiredFallback = async (
     previous: BathroomState,
     optimistic: BathroomState,
@@ -1049,6 +1092,7 @@ export function useStalls() {
     setBathroomLocation,
     setBathroomLocationHere,
     setLocationRequired,
+    setPoopRainEnabled,
     locationTogglePending,
     floodAlert,
     blockNote,

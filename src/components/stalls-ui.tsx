@@ -138,6 +138,23 @@ export function PaperRolls({
   );
 }
 
+function getPoopStormLabel(minutes: number) {
+  if (minutes >= 30) {
+    return "apocalipse de bosta";
+  }
+  if (minutes >= 20) {
+    return "temporal de bosta";
+  }
+  if (minutes >= 12) {
+    return "tempestade de bosta";
+  }
+  if (minutes >= 7) {
+    return "chuva de merda";
+  }
+
+  return null;
+}
+
 export function StallCard({
   stall,
   onToggle,
@@ -154,6 +171,7 @@ export function StallCard({
   const mood = useBusyMood(stall);
   const busy = stall.occupied;
   const noPaper = stall.paper_1 === "acabou" && stall.paper_2 === "acabou";
+  const poopStormLabel = busy ? getPoopStormLabel(mood.mins) : null;
 
   return (
     <div
@@ -242,6 +260,11 @@ export function StallCard({
           {busy ? (
             <>
               {mood.stinky && <Badge tone="busy">zona de risco</Badge>}
+              {poopStormLabel && (
+                <Badge tone="busy" pulse>
+                  {poopStormLabel}
+                </Badge>
+              )}
               {mood.critical && <Badge tone="busy">modo casulo</Badge>}
               {mood.forgotten && <Badge tone="neutral">confere aí</Badge>}
               {mood.roast && (

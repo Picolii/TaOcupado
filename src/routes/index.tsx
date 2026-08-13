@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import {
   Bell,
   Brush,
+  CloudRain,
   Crosshair,
   Flag,
   Image as ImageIcon,
@@ -28,7 +29,7 @@ import {
   type FormEvent,
 } from "react";
 import { QUEUE_STICKERS } from "@/lib/queue-stickers";
-import { useStalls } from "@/lib/stalls";
+import { useStalls, useTick, type Stall } from "@/lib/stalls";
 import { useNativeStatusPanel } from "@/lib/native-status-panel";
 import { cn } from "@/lib/utils";
 import { Badge, FloodAlert, StallCard } from "@/components/stalls-ui";
@@ -92,6 +93,262 @@ function GeoBadge({ status }: { status: ReturnType<typeof useStalls>["geo"]["sta
       {status === "desligado" ? <MapPinOff className="size-3" /> : <MapPin className="size-3" />}
       {label}
     </Badge>
+  );
+}
+
+const POOP_RAIN_THRESHOLD_MINUTES = 7;
+const POOP_EMOJI = "💩";
+const POOP_PILE_ROWS = [
+  { count: 18, y: 0, width: 360, size: 38 },
+  { count: 15, y: 34, width: 300, size: 37 },
+  { count: 12, y: 68, width: 236, size: 36 },
+  { count: 8, y: 102, width: 156, size: 34 },
+  { count: 5, y: 134, width: 94, size: 32 },
+  { count: 2, y: 164, width: 32, size: 30 },
+];
+const POOP_PILE_CAPACITY = POOP_PILE_ROWS.reduce((sum, row) => sum + row.count, 0);
+
+type PoopDrop = {
+  id: number;
+  left: number;
+  drift: number;
+  size: number;
+  duration: number;
+  spin: number;
+};
+
+type PoopPileEmoji = {
+  id: number;
+  x: number;
+  y: number;
+  size: number;
+  rotate: number;
+  delay: number;
+};
+
+function getPoopMinutes(stalls: Stall[] | null | undefined, now = Date.now()) {
+  if (!stalls) {
+    return { activeCount: 0, overMinutes: 0 };
+  }
+
+  return stalls.reduce(
+    (total, stall) => {
+      if (!stall.occupied) {
+        return total;
+      }
+
+      const changedAt = new Date(stall.changed_at).getTime();
+      if (!Number.isFinite(changedAt)) {
+        return total;
+      }
+
+      const minutes = Math.max(0, Math.floor((now - changedAt) / 60000));
+      const overMinutes =
+        minutes >= POOP_RAIN_THRESHOLD_MINUTES ? minutes - POOP_RAIN_THRESHOLD_MINUTES + 1 : 0;
+
+      if (overMinutes === 0) {
+        return total;
+      }
+
+      return {
+        activeCount: total.activeCount + 1,
+        overMinutes: total.overMinutes + overMinutes,
+      };
+    },
+    { activeCount: 0, overMinutes: 0 },
+  );
+}
+
+function makePoopDrop(id: number, boost: number): PoopDrop {
+  return {
+    id,
+    left: 4 + Math.random() * 92,
+    drift: (Math.random() - 0.5) * (80 + boost * 6),
+    size: 22 + Math.random() * Math.min(30, 12 + boost),
+    duration: Math.max(1.9, 4.4 - Math.random() * 0.8 - boost * 0.07),
+    spin: (Math.random() > 0.5 ? 1 : -1) * (120 + Math.random() * 360),
+  };
+}
+
+function makePoopPileEmoji(id: number, index: number): PoopPileEmoji {
+  let remaining = Math.min(index, POOP_PILE_CAPACITY - 1);
+
+  for (const row of POOP_PILE_ROWS) {
+    if (remaining >= row.count) {
+      remaining -= row.count;
+      continue;
+    }
+
+    const midpoint = (row.count - 1) / 2;
+    const spacing = row.count <= 1 ? 0 : row.width / (row.count - 1);
+    const wobble = Math.sin((index + 1) * 1.91) * 8 + (Math.random() - 0.5) * 10;
+    const x = (remaining - midpoint) * spacing + wobble;
+    const y = row.y + Math.random() * 7;
+
+    return {
+      id,
+      x,
+      y,
+      size: row.size + Math.random() * 7,
+      rotate: (Math.random() - 0.5) * 28,
+      delay: Math.random() * 0.14,
+    };
+  }
+
+  return {
+    id,
+    x: (Math.random() - 0.5) * 260,
+    y: Math.random() * 24,
+    size: 34 + Math.random() * 10,
+    rotate: (Math.random() - 0.5) * 30,
+    delay: 0,
+  };
+}
+
+function PoopStorm({ stalls, enabled }: { stalls: Stall[] | null | undefined; enabled: boolean }) {
+  useTick(1000);
+  const stats = enabled ? getPoopMinutes(stalls) : { activeCount: 0, overMinutes: 0 };
+  const active = stats.overMinutes > 0;
+  const [drops, setDrops] = useState<PoopDrop[]>([]);
+  const [pile, setPile] = useState<PoopPileEmoji[]>([]);
+  const [flushing, setFlushing] = useState(false);
+  const idRef = useRef(0);
+  const wasActiveRef = useRef(false);
+
+  useEffect(() => {
+    if (wasActiveRef.current && !active) {
+      setFlushing(true);
+      setDrops([]);
+
+      const clearTimer = window.setTimeout(() => {
+        setPile([]);
+      }, 450);
+      const finishTimer = window.setTimeout(() => {
+        setFlushing(false);
+      }, 1450);
+
+      return () => {
+        window.clearTimeout(clearTimer);
+        window.clearTimeout(finishTimer);
+      };
+    }
+
+    wasActiveRef.current = active;
+  }, [active]);
+
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+
+    wasActiveRef.current = true;
+    setFlushing(false);
+
+    const boost = Math.min(34, stats.overMinutes);
+    const intervalMs = Math.max(130, 820 - boost * 32 - stats.activeCount * 70);
+    const burstSize = Math.min(9, 1 + Math.floor(boost / 4) + stats.activeCount);
+
+    const rain = () => {
+      const dropsToAdd = Array.from({ length: burstSize }, () =>
+        makePoopDrop(++idRef.current, boost),
+      );
+
+      setDrops((current) => [...current, ...dropsToAdd].slice(-120));
+      setPile((current) => {
+        const availableSlots = POOP_PILE_CAPACITY - current.length;
+
+        if (availableSlots <= 0) {
+          return current;
+        }
+
+        const pileToAdd = Array.from(
+          { length: Math.min(availableSlots, Math.max(1, Math.ceil(burstSize / 2))) },
+          (_, i) => makePoopPileEmoji(++idRef.current, current.length + i),
+        );
+
+        return [...current, ...pileToAdd];
+      });
+
+      for (const drop of dropsToAdd) {
+        window.setTimeout(
+          () => {
+            setDrops((current) => current.filter((item) => item.id !== drop.id));
+          },
+          drop.duration * 1000 + 250,
+        );
+      }
+    };
+
+    rain();
+    const timer = window.setInterval(rain, intervalMs);
+
+    return () => window.clearInterval(timer);
+  }, [active, stats.activeCount, stats.overMinutes]);
+
+  if (!active && !flushing && pile.length === 0 && drops.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="poop-storm" aria-hidden="true">
+      {drops.map((drop) => (
+        <span
+          key={drop.id}
+          className="poop-rain-drop"
+          style={
+            {
+              "--poop-left": `${drop.left}%`,
+              "--poop-drift": `${drop.drift}px`,
+              "--poop-size": `${drop.size}px`,
+              "--poop-duration": `${drop.duration}s`,
+              "--poop-spin": `${drop.spin}deg`,
+            } as CSSProperties
+          }
+        >
+          {POOP_EMOJI}
+        </span>
+      ))}
+
+      <div className={cn("poop-pile", flushing && "poop-pile-flushing")}>
+        {pile.map((emoji) => (
+          <span
+            key={emoji.id}
+            className="poop-pile-emoji"
+            style={
+              {
+                "--poop-x": `${emoji.x}px`,
+                "--poop-y": `${emoji.y}px`,
+                "--poop-size": `${emoji.size}px`,
+                "--poop-rotate": `${emoji.rotate}deg`,
+                "--poop-delay": `${emoji.delay}s`,
+              } as CSSProperties
+            }
+          >
+            {POOP_EMOJI}
+          </span>
+        ))}
+      </div>
+
+      {flushing && (
+        <div className="poop-flush">
+          <div className="poop-flush-fixture">
+            <span className="poop-flush-cord">
+              <span className="poop-flush-pull" />
+            </span>
+            <span className="poop-flush-tank" />
+            <span className="poop-flush-bowl">
+              <span className="poop-flush-water" />
+              <span className="poop-flush-vortex" />
+              <span className="poop-flush-vortex poop-flush-vortex-soft" />
+            </span>
+            <span className="poop-flush-base" />
+          </div>
+          <span className="poop-flush-splash poop-flush-splash-left" />
+          <span className="poop-flush-splash poop-flush-splash-right" />
+          <span className="poop-flush-rush" />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -897,6 +1154,7 @@ function AdminAccess({
   setBathroomLocation,
   setBathroomLocationHere,
   setLocationRequired,
+  setPoopRainEnabled,
   locationTogglePending,
   removeQueueTicket,
   testQueueNotification,
@@ -916,6 +1174,7 @@ function AdminAccess({
   setBathroomLocation: (lat: number, lng: number, radius_m: number) => void;
   setBathroomLocationHere: () => void;
   setLocationRequired: ReturnType<typeof useStalls>["setLocationRequired"];
+  setPoopRainEnabled: ReturnType<typeof useStalls>["setPoopRainEnabled"];
   locationTogglePending: ReturnType<typeof useStalls>["locationTogglePending"];
   removeQueueTicket: ReturnType<typeof useStalls>["removeQueueTicket"];
   testQueueNotification: ReturnType<typeof useStalls>["testQueueNotification"];
@@ -1078,6 +1337,17 @@ function AdminAccess({
                     : bathroom?.location_required === false
                       ? "GPS desligado"
                       : "GPS ligado"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPoopRainEnabled()}
+                  className={cn(
+                    iconButtonClass(bathroom?.poop_rain_enabled !== false),
+                    "col-span-2",
+                  )}
+                >
+                  <CloudRain className="size-4" />
+                  {bathroom?.poop_rain_enabled === false ? "Chuva desligada" : "Chuva ligada"}
                 </button>
               </div>
 
@@ -1251,6 +1521,7 @@ function Index() {
     setBathroomLocation,
     setBathroomLocationHere,
     setLocationRequired,
+    setPoopRainEnabled,
     locationTogglePending,
     floodAlert,
     blockNote,
@@ -1332,6 +1603,7 @@ function Index() {
           setBathroomLocation={setBathroomLocation}
           setBathroomLocationHere={setBathroomLocationHere}
           setLocationRequired={setLocationRequired}
+          setPoopRainEnabled={setPoopRainEnabled}
           locationTogglePending={locationTogglePending}
           removeQueueTicket={removeQueueTicket}
           testQueueNotification={testQueueNotification}
@@ -1345,6 +1617,8 @@ function Index() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 px-4 py-5">
+      <PoopStorm stalls={stalls} enabled={bathroom?.poop_rain_enabled !== false} />
+
       {floodAlert && (
         <FloodAlert
           message={floodAlert}
@@ -1496,6 +1770,7 @@ function Index() {
         setBathroomLocation={setBathroomLocation}
         setBathroomLocationHere={setBathroomLocationHere}
         setLocationRequired={setLocationRequired}
+        setPoopRainEnabled={setPoopRainEnabled}
         locationTogglePending={locationTogglePending}
         removeQueueTicket={removeQueueTicket}
         testQueueNotification={testQueueNotification}

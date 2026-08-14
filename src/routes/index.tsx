@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
+  ArrowUp,
   Bell,
   Brush,
   CloudRain,
@@ -76,6 +77,65 @@ function LiveBadge({ live }: { live: boolean }) {
   );
 }
 
+function FloatingStatusBar({ stalls }: { stalls: Stall[] | null | undefined }) {
+  const [visible, setVisible] = useState(false);
+  const freeCount = stalls?.filter((stall) => !stall.occupied).length ?? 0;
+
+  useEffect(() => {
+    const updateVisibility = () => setVisible(window.scrollY > 280);
+    updateVisibility();
+    window.addEventListener("scroll", updateVisibility, { passive: true });
+    return () => window.removeEventListener("scroll", updateVisibility);
+  }, []);
+
+  if (!stalls || !visible) {
+    return null;
+  }
+
+  return (
+    <div className="fixed bottom-3 left-1/2 z-50 flex w-[min(94vw,36rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-border/80 bg-card/90 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.42)] backdrop-blur-xl">
+      <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
+        {stalls.map((stall) => (
+          <span
+            key={stall.id}
+            className={cn(
+              "inline-flex h-11 min-w-0 items-center justify-between gap-2 rounded-lg border px-3 text-xs font-bold uppercase tracking-wide",
+              stall.occupied
+                ? "border-busy/45 bg-busy/15 text-busy"
+                : "border-free/45 bg-free/15 text-free",
+            )}
+          >
+            <span className="inline-flex min-w-0 items-center gap-2">
+              <span
+                className={cn(
+                  "size-2.5 shrink-0 rounded-full shadow-[0_0_14px_currentColor]",
+                  stall.occupied ? "bg-busy" : "bg-free",
+                )}
+              />
+              <span className="truncate">{stall.label}</span>
+            </span>
+            <span className="shrink-0 text-[11px]">{stall.occupied ? "ocupado" : "livre"}</span>
+          </span>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        className={cn(
+          "inline-flex size-11 shrink-0 items-center justify-center rounded-lg border transition-colors",
+          freeCount > 0
+            ? "border-free/55 bg-free/15 text-free hover:bg-free/25"
+            : "border-busy/55 bg-busy/15 text-busy hover:bg-busy/25",
+        )}
+        aria-label="Voltar ao topo"
+        title="Voltar ao topo"
+      >
+        <ArrowUp className="size-4" />
+      </button>
+    </div>
+  );
+}
+
 function GeoBadge({ status }: { status: ReturnType<typeof useStalls>["geo"]["status"] }) {
   const tone =
     status === "perto" || status === "desligado" ? "free" : status === "pedindo" ? "warn" : "busy";
@@ -98,6 +158,8 @@ function GeoBadge({ status }: { status: ReturnType<typeof useStalls>["geo"]["sta
 
 const POOP_RAIN_THRESHOLD_MINUTES = 7;
 const POOP_EMOJI = "💩";
+const POOP_STORM_LIGHTNING_MINUTES = 6;
+const POOP_MAX_DROPS = 54;
 const POOP_PILE_ROWS = [
   { count: 18, y: 0, width: 360, size: 38 },
   { count: 15, y: 34, width: 300, size: 37 },
@@ -115,6 +177,7 @@ type PoopDrop = {
   size: number;
   duration: number;
   spin: number;
+  expiresAt: number;
 };
 
 type PoopPileEmoji = {
@@ -159,14 +222,17 @@ function getPoopMinutes(stalls: Stall[] | null | undefined, now = Date.now()) {
   );
 }
 
-function makePoopDrop(id: number, boost: number): PoopDrop {
+function makePoopDrop(id: number, boost: number, now = Date.now()): PoopDrop {
+  const duration = Math.max(2.2, 4.6 - Math.random() * 0.7 - boost * 0.045);
+
   return {
     id,
     left: 4 + Math.random() * 92,
-    drift: (Math.random() - 0.5) * (80 + boost * 6),
-    size: 22 + Math.random() * Math.min(30, 12 + boost),
-    duration: Math.max(1.9, 4.4 - Math.random() * 0.8 - boost * 0.07),
+    drift: (Math.random() - 0.5) * (70 + boost * 4),
+    size: 20 + Math.random() * Math.min(22, 10 + boost * 0.65),
+    duration,
     spin: (Math.random() > 0.5 ? 1 : -1) * (120 + Math.random() * 360),
+    expiresAt: now + duration * 1000 + 450,
   };
 }
 
@@ -209,6 +275,7 @@ function PoopStorm({ stalls, enabled }: { stalls: Stall[] | null | undefined; en
   useTick(1000);
   const stats = enabled ? getPoopMinutes(stalls) : { activeCount: 0, overMinutes: 0 };
   const active = stats.overMinutes > 0;
+  const lightning = stats.overMinutes >= POOP_STORM_LIGHTNING_MINUTES;
   const [drops, setDrops] = useState<PoopDrop[]>([]);
   const [pile, setPile] = useState<PoopPileEmoji[]>([]);
   const [flushing, setFlushing] = useState(false);
@@ -245,15 +312,18 @@ function PoopStorm({ stalls, enabled }: { stalls: Stall[] | null | undefined; en
     setFlushing(false);
 
     const boost = Math.min(34, stats.overMinutes);
-    const intervalMs = Math.max(130, 820 - boost * 32 - stats.activeCount * 70);
-    const burstSize = Math.min(9, 1 + Math.floor(boost / 4) + stats.activeCount);
+    const intervalMs = Math.max(260, 900 - boost * 20 - stats.activeCount * 45);
+    const burstSize = Math.min(5, 1 + Math.floor(boost / 7) + stats.activeCount);
 
     const rain = () => {
+      const now = Date.now();
       const dropsToAdd = Array.from({ length: burstSize }, () =>
-        makePoopDrop(++idRef.current, boost),
+        makePoopDrop(++idRef.current, boost, now),
       );
 
-      setDrops((current) => [...current, ...dropsToAdd].slice(-120));
+      setDrops((current) =>
+        [...current.filter((drop) => drop.expiresAt > now), ...dropsToAdd].slice(-POOP_MAX_DROPS),
+      );
       setPile((current) => {
         const availableSlots = POOP_PILE_CAPACITY - current.length;
 
@@ -268,15 +338,6 @@ function PoopStorm({ stalls, enabled }: { stalls: Stall[] | null | undefined; en
 
         return [...current, ...pileToAdd];
       });
-
-      for (const drop of dropsToAdd) {
-        window.setTimeout(
-          () => {
-            setDrops((current) => current.filter((item) => item.id !== drop.id));
-          },
-          drop.duration * 1000 + 250,
-        );
-      }
     };
 
     rain();
@@ -291,6 +352,16 @@ function PoopStorm({ stalls, enabled }: { stalls: Stall[] | null | undefined; en
 
   return (
     <div className="poop-storm" aria-hidden="true">
+      {lightning && (
+        <div className="poop-lightning">
+          <span className="poop-lightning-bolt poop-lightning-bolt-left" />
+          <span className="poop-lightning-bolt poop-lightning-bolt-right" />
+          {stats.overMinutes >= 14 && (
+            <span className="poop-lightning-bolt poop-lightning-bolt-center" />
+          )}
+        </div>
+      )}
+
       {drops.map((drop) => (
         <span
           key={drop.id}
@@ -357,14 +428,22 @@ function QueueRail({
   inQueue,
   position,
   myTurn,
+  queueText,
   emotes,
+  onToggleQueue,
+  onToggleCleaning,
+  cleaningDisabled,
   onSendEmote,
 }: {
   queueLength: number;
   inQueue: boolean;
   position: number;
   myTurn: boolean;
+  queueText: string;
   emotes: ReturnType<typeof useStalls>["queueEmotes"];
+  onToggleQueue: () => void;
+  onToggleCleaning: () => void;
+  cleaningDisabled: boolean;
   onSendEmote: (stickerUrl: string) => void;
 }) {
   const spots = Array.from({ length: Math.max(queueLength, inQueue ? position + 1 : 0) });
@@ -428,22 +507,43 @@ function QueueRail({
           );
         })}
       </div>
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-display text-2xl leading-none">Fila</h2>
-          <p className="text-xs text-muted-foreground">
-            {queueLength === 0
-              ? "Sem ninguém esperando."
-              : myTurn
-                ? "Você está em primeiro."
-                : `${queueLength} lugar${queueLength === 1 ? "" : "es"} ocupado${queueLength === 1 ? "" : "s"}.`}
-          </p>
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0">
+            <h2 className="text-display text-2xl leading-none">Fila</h2>
+            <p className="text-xs text-muted-foreground">
+              {queueLength === 0
+                ? "Sem ninguém esperando."
+                : myTurn
+                  ? "Você está em primeiro."
+                  : `${queueLength} lugar${queueLength === 1 ? "" : "es"} ocupado${queueLength === 1 ? "" : "s"}.`}
+            </p>
+          </div>
+          {inQueue && (
+            <Badge tone={myTurn ? "free" : "neutral"} pulse={myTurn}>
+              {myTurn ? "sua vez" : `${position + 1}o`}
+            </Badge>
+          )}
         </div>
-        {inQueue && (
-          <Badge tone={myTurn ? "free" : "neutral"} pulse={myTurn}>
-            {myTurn ? "sua vez" : `${position + 1}o`}
-          </Badge>
-        )}
+        <div className="grid min-w-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+          <button
+            type="button"
+            onClick={onToggleQueue}
+            className={cn(iconButtonClass(!inQueue), inQueue && "bg-card")}
+          >
+            <Bell className="size-4" />
+            {inQueue ? `Sair ${queueText}` : "Entrar fila"}
+          </button>
+          <button
+            type="button"
+            onClick={onToggleCleaning}
+            disabled={cleaningDisabled}
+            className={cn(iconButtonClass(), cleaningDisabled && "cursor-not-allowed opacity-50")}
+          >
+            <Brush className="size-4" />
+            Limpeza
+          </button>
+        </div>
       </div>
 
       <div
@@ -777,6 +877,7 @@ function StallReports({
   onReact,
   onUpdate,
   onRemove,
+  className,
 }: {
   stalls: ReturnType<typeof useStalls>["stalls"];
   reports: ReturnType<typeof useStalls>["reports"];
@@ -793,6 +894,7 @@ function StallReports({
   onReact: ReturnType<typeof useStalls>["reactToStallReport"];
   onUpdate: ReturnType<typeof useStalls>["updateStallReport"];
   onRemove: ReturnType<typeof useStalls>["removeStallReport"];
+  className?: string;
 }) {
   const [selectedStallId, setSelectedStallId] = useState("");
   const [message, setMessage] = useState("");
@@ -803,6 +905,8 @@ function StallReports({
   const [editImageDataUrl, setEditImageDataUrl] = useState<string | null>(null);
   const [editPending, setEditPending] = useState(false);
   const [reactionPickerReportId, setReactionPickerReportId] = useState<string | null>(null);
+  const reportsScrollRef = useRef<HTMLElement | null>(null);
+  const [reportsScrolled, setReportsScrolled] = useState(false);
 
   useEffect(() => {
     if (!selectedStallId && stalls?.[0]) setSelectedStallId(stalls[0].id);
@@ -861,9 +965,20 @@ function StallReports({
     if (editingReportId === report.id) cancelEdit();
   };
 
+  const handleReportsScroll = () => {
+    setReportsScrolled((reportsScrollRef.current?.scrollTop ?? 0) > 80);
+  };
+
   return (
-    <section className="grid min-w-0 gap-3 rounded-lg border border-border bg-card/95 p-3">
-      <div className="flex min-w-0 items-center justify-between gap-3">
+    <section
+      ref={reportsScrollRef}
+      onScroll={handleReportsScroll}
+      className={cn(
+        "scrollbar-dark grid min-w-0 rounded-lg border border-border bg-card/95",
+        className,
+      )}
+    >
+      <div className="sticky top-0 z-30 flex min-w-0 items-center justify-between gap-3 rounded-t-lg border-b border-border/80 bg-card/95 px-3 py-3 backdrop-blur">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 text-display text-3xl leading-none">
             <MessageSquare className="size-5 text-free" />
@@ -873,11 +988,24 @@ function StallReports({
             {reports.length} registro{reports.length === 1 ? "" : "s"}
           </p>
         </div>
-        {reportStatus === "sent" && <Badge tone="free">enviado</Badge>}
-        {reportStatus === "failed" && <Badge tone="warn">falhou</Badge>}
+        <div className="flex shrink-0 items-center gap-2">
+          {reportStatus === "sent" && <Badge tone="free">enviado</Badge>}
+          {reportStatus === "failed" && <Badge tone="warn">falhou</Badge>}
+          {reportsScrolled && (
+            <button
+              type="button"
+              onClick={() => reportsScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+              className="hidden size-9 items-center justify-center rounded-lg border border-border bg-background/80 text-muted-foreground transition-colors hover:border-free/70 hover:text-free lg:inline-flex"
+              aria-label="Voltar ao topo do mural"
+              title="Voltar ao topo"
+            >
+              <ArrowUp className="size-4" />
+            </button>
+          )}
+        </div>
       </div>
 
-      <form onSubmit={submit} className="grid gap-2">
+      <form onSubmit={submit} className="mx-3 mt-3 grid gap-2">
         <div className="grid grid-cols-2 gap-2">
           {stalls?.map((stall) => (
             <button
@@ -933,7 +1061,7 @@ function StallReports({
         />
       </form>
 
-      <div className="grid gap-2">
+      <div className="mx-3 mb-3 grid gap-2">
         {reports.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border bg-background/35 px-3 py-4 text-center text-xs font-bold uppercase tracking-wide text-muted-foreground">
             mural limpo
@@ -1467,12 +1595,15 @@ function CleaningClosed({
 }) {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 px-4 py-5">
-      <header className="flex items-center justify-between gap-3">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-display text-4xl leading-none sm:text-5xl">Tá ocupado?</h1>
           <p className="text-sm text-muted-foreground">Banheiro temporariamente fechado.</p>
         </div>
-        <LiveBadge live={live} />
+        <div className="flex flex-wrap items-center gap-2 self-end sm:justify-end">
+          <GeoBadge status={geo.status} />
+          <LiveBadge live={live} />
+        </div>
       </header>
 
       <section className="relative overflow-hidden rounded-lg border border-orange-400/70 bg-orange-400/10 p-4 pb-20 sm:p-6 sm:pb-20">
@@ -1616,8 +1747,9 @@ function Index() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 px-4 py-5">
+    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-4 px-4 py-5 pb-24 lg:fixed lg:inset-y-0 lg:left-1/2 lg:h-dvh lg:min-h-0 lg:max-w-6xl lg:-translate-x-1/2 lg:overflow-hidden lg:pb-5">
       <PoopStorm stalls={stalls} enabled={bathroom?.poop_rain_enabled !== false} />
+      <FloatingStatusBar stalls={stalls} />
 
       {floodAlert && (
         <FloodAlert
@@ -1628,16 +1760,12 @@ function Index() {
         />
       )}
 
-      <header className="flex items-center justify-between gap-3">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-display text-4xl leading-none sm:text-5xl">Tá ocupado?</h1>
           <p className="text-sm text-muted-foreground">Painel ao vivo dos boxes.</p>
         </div>
-        <LiveBadge live={live} />
-      </header>
-
-      <section className="grid min-w-0 gap-3 overflow-hidden rounded-lg border border-border bg-card/95 p-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 self-end sm:justify-end">
           <Badge tone={freeCount === 0 ? "busy" : "free"}>
             {stalls ? `${freeCount}/${stalls.length} livres` : "carregando"}
           </Badge>
@@ -1650,83 +1778,87 @@ function Index() {
           {notificationPermission === "denied" && <Badge tone="warn">notificação bloqueada</Badge>}
           {notificationStatus === "failed" && <Badge tone="warn">aviso falhou</Badge>}
           {notificationStatus === "sent" && <Badge tone="free">aviso ok</Badge>}
+          <LiveBadge live={live} />
         </div>
+      </header>
 
-        <div className="grid min-w-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-          <button
-            type="button"
-            onClick={() => toggleCleaning(adminUnlocked)}
-            disabled={!adminUnlocked && !geo.allowed}
-            className={cn(
-              iconButtonClass(),
-              !adminUnlocked && !geo.allowed && "cursor-not-allowed opacity-50",
+      {(notificationPermission === "default" || nativeStatusPanel.available) && (
+        <section className="grid min-w-0 gap-3 overflow-hidden rounded-lg border border-border bg-card/95 p-3">
+          <div className="grid min-w-0 grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+            {notificationPermission === "default" && (
+              <button
+                type="button"
+                onClick={enableQueueNotifications}
+                className={cn(iconButtonClass(), "col-span-2 sm:col-span-1")}
+              >
+                <Bell className="size-4" />
+                Ativar aviso
+              </button>
             )}
-          >
-            <Brush className="size-4" />
-            Limpeza
-          </button>
-          <button
-            type="button"
-            onClick={inQueue ? leaveQueue : joinQueue}
-            className={cn(iconButtonClass(!inQueue), inQueue && "bg-card")}
-          >
-            <Bell className="size-4" />
-            {inQueue ? `Sair ${queueText}` : "Entrar fila"}
-          </button>
-          {notificationPermission === "default" && (
-            <button
-              type="button"
-              onClick={enableQueueNotifications}
-              className={cn(iconButtonClass(), "col-span-2 sm:col-span-1")}
-            >
-              <Bell className="size-4" />
-              Ativar aviso
-            </button>
-          )}
-          {nativeStatusPanel.available && (
-            <button
-              type="button"
-              onClick={
-                nativeStatusPanel.enabled ? nativeStatusPanel.disable : nativeStatusPanel.enable
-              }
-              className={cn(iconButtonClass(nativeStatusPanel.enabled), "col-span-2 sm:col-span-1")}
-            >
-              <Bell className="size-4" />
-              {nativeStatusPanel.enabled ? "Parar painel" : "Acompanhar"}
-            </button>
-          )}
-        </div>
-
-        <div className="min-w-0 lg:col-span-2">
-          <QueueRail
-            queueLength={queue.length}
-            inQueue={inQueue}
-            position={position}
-            myTurn={myTurn}
-            emotes={queueEmotes}
-            onSendEmote={sendQueueEmote}
-          />
-        </div>
-      </section>
+            {nativeStatusPanel.available && (
+              <button
+                type="button"
+                onClick={
+                  nativeStatusPanel.enabled ? nativeStatusPanel.disable : nativeStatusPanel.enable
+                }
+                className={cn(
+                  iconButtonClass(nativeStatusPanel.enabled),
+                  "col-span-2 sm:col-span-1",
+                )}
+              >
+                <Bell className="size-4" />
+                {nativeStatusPanel.enabled ? "Parar painel" : "Acompanhar"}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
       {!stalls ? (
         <div className="rounded-lg border border-border bg-card p-10 text-center text-muted-foreground">
           Carregando status...
         </div>
       ) : (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {stalls.map((s) => (
-              <StallCard
-                key={s.id}
-                stall={s}
-                blocked={locked}
-                compact
-                onToggle={() => toggle(s, adminUnlocked)}
-                onCyclePaper={(roll) => cyclePaper(s, roll, adminUnlocked)}
-              />
-            ))}
+        <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,0.92fr)_minmax(24rem,1.08fr)]">
+          <div className="scrollbar-dark grid min-w-0 gap-3 lg:min-h-0 lg:content-start lg:gap-2 lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 lg:gap-2">
+              {stalls.map((s) => (
+                <StallCard
+                  key={s.id}
+                  stall={s}
+                  blocked={locked}
+                  compact
+                  onToggle={() => toggle(s, adminUnlocked)}
+                  onCyclePaper={(roll) => cyclePaper(s, roll, adminUnlocked)}
+                />
+              ))}
+            </div>
+
+            <QueueRail
+              queueLength={queue.length}
+              inQueue={inQueue}
+              position={position}
+              myTurn={myTurn}
+              queueText={queueText}
+              emotes={queueEmotes}
+              onToggleQueue={inQueue ? leaveQueue : joinQueue}
+              onToggleCleaning={() => toggleCleaning(adminUnlocked)}
+              cleaningDisabled={!adminUnlocked && !geo.allowed}
+              onSendEmote={sendQueueEmote}
+            />
+
+            {!geo.allowed && (
+              <p className="rounded-lg border border-border bg-card/80 px-3 py-2 text-sm text-muted-foreground">
+                {geo.message}
+              </p>
+            )}
+            {adminUnlocked && (
+              <p className="rounded-lg border border-free/50 bg-free/10 px-3 py-2 text-sm font-semibold text-free">
+                ADM ativo: GPS, limpeza e anti-flood não bloqueiam suas marcações.
+              </p>
+            )}
           </div>
+
           <StallReports
             stalls={stalls}
             reports={reports}
@@ -1743,20 +1875,11 @@ function Index() {
             onReact={reactToStallReport}
             onUpdate={updateStallReport}
             onRemove={removeStallReport}
+            className="lg:h-full lg:max-h-full lg:overflow-y-auto lg:overscroll-contain"
           />
-        </>
+        </div>
       )}
 
-      {!geo.allowed && (
-        <p className="rounded-lg border border-border bg-card/80 px-3 py-2 text-sm text-muted-foreground">
-          {geo.message}
-        </p>
-      )}
-      {adminUnlocked && (
-        <p className="rounded-lg border border-free/50 bg-free/10 px-3 py-2 text-sm font-semibold text-free">
-          ADM ativo: GPS, limpeza e anti-flood não bloqueiam suas marcações.
-        </p>
-      )}
       <AdminAccess
         bathroom={bathroom}
         stalls={stalls}

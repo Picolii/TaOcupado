@@ -99,13 +99,21 @@ export function PaperRolls({
   stall,
   onCycle,
   disabled,
+  compact = false,
 }: {
   stall: Stall;
   onCycle: (roll: 1 | 2) => void;
   disabled?: boolean;
+  compact?: boolean;
 }) {
   return (
-    <div className="mt-3 grid grid-cols-2 gap-2">
+    <div
+      className={cn(
+        "mt-3 grid grid-cols-2 gap-2",
+        compact &&
+          "lg:absolute lg:right-2.5 lg:top-1/2 lg:mt-0 lg:w-9 lg:-translate-y-1/2 lg:grid-cols-1 lg:gap-1.5",
+      )}
+    >
       {([1, 2] as const).map((roll) => {
         const level = roll === 1 ? stall.paper_1 : stall.paper_2;
         const look = PAPER_LOOK[level];
@@ -118,8 +126,11 @@ export function PaperRolls({
               e.stopPropagation();
               onCycle(roll);
             }}
+            aria-label={`Rolo ${roll}: ${look.label}`}
+            title={`Rolo ${roll}: ${look.label}`}
             className={cn(
               "flex h-12 items-center justify-between gap-2 rounded-lg border px-3 text-left transition-all active:scale-[0.98]",
+              compact && "lg:size-9 lg:justify-center lg:px-0",
               look.className,
               disabled && "cursor-not-allowed opacity-50",
             )}
@@ -128,9 +139,11 @@ export function PaperRolls({
               <span className={cn("text-lg leading-none", level === "acabou" && "animate-pulse")}>
                 {look.icon}
               </span>
-              Rolo {roll}
+              <span className={compact ? "lg:sr-only" : undefined}>Rolo {roll}</span>
             </span>
-            <span className="text-display text-lg leading-none">{look.label}</span>
+            <span className={cn("text-display text-lg leading-none", compact && "lg:sr-only")}>
+              {look.label}
+            </span>
           </button>
         );
       })}
@@ -177,7 +190,8 @@ export function StallCard({
     <div
       className={cn(
         "group relative overflow-hidden rounded-lg border transition-all",
-        compact ? "p-4" : "p-5",
+        compact ? "p-3.5" : "p-5",
+        compact && "lg:p-2.5 lg:pr-14",
         blocked && "opacity-60",
         !busy && "border-free/60 bg-free/10 glow-free",
         busy && !mood.stinky && "border-busy/50 bg-busy/8 glow-busy",
@@ -199,21 +213,29 @@ export function StallCard({
         aria-pressed={busy}
         className={cn(
           "relative w-full text-left transition-transform active:scale-[0.99]",
+          compact &&
+            "lg:grid lg:grid-cols-[minmax(8rem,auto)_minmax(0,1fr)] lg:items-center lg:gap-x-3",
           blocked && "cursor-not-allowed",
         )}
       >
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className={cn("flex min-w-0 gap-x-2 gap-y-0.5", "flex-col")}>
             <span className={cn("text-display leading-none", compact ? "text-4xl" : "text-5xl")}>
               {stall.label}
             </span>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+            <span
+              className={cn(
+                "font-bold uppercase tracking-wide text-muted-foreground",
+                compact ? "text-[10px]" : "text-xs",
+              )}
+            >
               {stall.id === "vaso-2" ? "Lado do mictório" : "Lado da pia"}
-            </p>
+            </span>
           </div>
           <span
             className={cn(
               "mt-1 flex h-7 min-w-24 items-center justify-center gap-1.5 rounded-md text-[11px] font-bold uppercase tracking-wide",
+              compact && "lg:hidden",
               busy ? "bg-busy text-busy-foreground" : "bg-free text-free-foreground",
             )}
           >
@@ -227,11 +249,11 @@ export function StallCard({
           </span>
         </div>
 
-        <div className="mt-3 flex items-end gap-3">
+        <div className={cn("flex items-end gap-3", compact ? "mt-0.5 lg:mt-0" : "mt-3")}>
           <span
             className={cn(
               "text-display leading-none",
-              compact ? "text-6xl" : "text-7xl",
+              compact ? "text-[3.35rem] lg:text-[2.85rem]" : "text-7xl",
               busy ? "text-busy" : "text-free",
               busy && mood.roast && "animate-pulse",
             )}
@@ -249,9 +271,25 @@ export function StallCard({
           )}
         </div>
 
-        {busy && <p className="mt-2 min-h-8 text-sm text-muted-foreground">{mood.joke}</p>}
+        {busy && (
+          <p
+            className={cn(
+              "text-muted-foreground",
+              compact
+                ? "mt-1 min-h-6 text-xs lg:col-span-2 lg:mt-0 lg:min-h-0 lg:truncate"
+                : "mt-2 min-h-8 text-sm",
+            )}
+          >
+            {mood.joke}
+          </p>
+        )}
 
-        <div className="mt-3 flex min-h-6 flex-wrap items-center gap-1.5">
+        <div
+          className={cn(
+            "flex min-h-6 flex-wrap items-center gap-1.5",
+            compact ? "mt-2 lg:col-span-2 lg:mt-1 lg:min-h-0" : "mt-3",
+          )}
+        >
           {noPaper && (
             <Badge tone="busy" pulse>
               🧻 sem papel
@@ -284,7 +322,7 @@ export function StallCard({
         </div>
       </button>
 
-      <PaperRolls stall={stall} onCycle={onCyclePaper} disabled={blocked} />
+      <PaperRolls stall={stall} onCycle={onCyclePaper} disabled={blocked} compact={compact} />
 
       {busy && mood.dead && (
         <span className="absolute -right-6 top-4 rotate-12 rounded bg-busy px-8 py-0.5 text-xs font-bold text-busy-foreground">

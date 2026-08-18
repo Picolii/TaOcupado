@@ -248,6 +248,13 @@ export type Database = {
         };
         Returns: string;
       };
+      delete_stall_report_comment: {
+        Args: {
+          target_comment_id: string;
+          admin_token: string;
+        };
+        Returns: string;
+      };
       toggle_stall_report_comment_reaction: {
         Args: {
           target_comment_id: string;

@@ -1009,8 +1009,8 @@ export function useStalls() {
 
   const removeStallReport = async (reportId: string, adminToken?: string) => {
     const report = reports.find((item) => item.id === reportId);
-    if (!ownerSecret || !report) return false;
-    if (!adminToken && report.reporter_ticket !== ticket) return false;
+    if (!report) return false;
+    if (!adminToken && (!ownerSecret || report.reporter_ticket !== ticket)) return false;
 
     const { data, error } = await supabase.rpc("delete_stall_report", {
       report_id: reportId,
@@ -1032,6 +1032,27 @@ export function useStalls() {
     setReportReactions((prev) => prev.filter((reaction) => reaction.report_id !== reportId));
     setReportCommentReactions((prev) =>
       prev.filter((reaction) => !removedCommentIds.includes(reaction.comment_id)),
+    );
+    return true;
+  };
+
+  const removeStallReportComment = async (commentId: string, adminToken?: string) => {
+    if (!adminToken || !reportComments.some((comment) => comment.id === commentId)) return false;
+
+    const { data, error } = await supabase.rpc("delete_stall_report_comment", {
+      target_comment_id: commentId,
+      admin_token: adminToken,
+    });
+
+    if (error) {
+      console.warn("Não foi possível remover o comentário.", error.message);
+      return false;
+    }
+    if (!data) return false;
+
+    setReportComments((prev) => prev.filter((comment) => comment.id !== commentId));
+    setReportCommentReactions((prev) =>
+      prev.filter((reaction) => reaction.comment_id !== commentId),
     );
     return true;
   };
@@ -1250,6 +1271,7 @@ export function useStalls() {
     submitStallReportComment,
     updateStallReport,
     removeStallReport,
+    removeStallReportComment,
     reactToStallReport,
     reactToStallReportComment,
     sendQueueEmote,

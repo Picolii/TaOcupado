@@ -57,6 +57,13 @@ export type StallReportReaction = {
   emoji: string;
   created_at: string;
 };
+export type StallReportCommentReaction = {
+  id: string;
+  comment_id: string;
+  reactor_ticket: string;
+  emoji: string;
+  created_at: string;
+};
 type QueueEmotePayload = {
   id?: string;
   sticker_url?: string;
@@ -73,7 +80,7 @@ const REPORT_DEBOUNCE_MS = 2500;
 const REPORT_LIMIT = 24;
 const COMMENT_DEBOUNCE_MS = 1200;
 const COMMENT_LIMIT = 120;
-const REACTION_LIMIT = 240;
+const REACTION_LIMIT = 420;
 const STALL_REPORT_SELECT =
   "id,stall_id,stall_label,reporter_ticket,message,image_data_url,created_at,updated_at";
 
@@ -92,6 +99,20 @@ export const STALL_REPORT_REACTIONS = [
   "👀",
   "⚠️",
   "🏆",
+  "😂",
+  "😬",
+  "😤",
+  "🙏",
+  "💦",
+  "🧯",
+  "🫠",
+  "🧨",
+  "😵‍💫",
+  "🤌",
+  "🧽",
+  "🚽",
+  "🚪",
+  "✨",
 ] as const;
 
 export const FIXED_BATHROOM_LOCATION = {
@@ -322,6 +343,9 @@ export function useStalls() {
   const [reports, setReports] = useState<StallReport[]>([]);
   const [reportComments, setReportComments] = useState<StallReportComment[]>([]);
   const [reportReactions, setReportReactions] = useState<StallReportReaction[]>([]);
+  const [reportCommentReactions, setReportCommentReactions] = useState<
+    StallReportCommentReaction[]
+  >([]);
   const [reportStatus, setReportStatus] = useState<"idle" | "sent" | "failed">("idle");
   const [ticket, setTicket] = useState("");
   const [ownerSecret, setOwnerSecret] = useState("");
@@ -410,6 +434,19 @@ export function useStalls() {
     if (data) setReportReactions(data as StallReportReaction[]);
   }, []);
 
+  const loadReportCommentReactions = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("stall_report_comment_reactions")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(REACTION_LIMIT);
+    if (error) {
+      console.warn("Não foi possível carregar as reações dos comentários.", error.message);
+      return;
+    }
+    if (data) setReportCommentReactions(data as StallReportCommentReaction[]);
+  }, []);
+
   useEffect(() => {
     let active = true;
 
@@ -428,6 +465,7 @@ export function useStalls() {
       loadReports();
       loadReportComments();
       loadReportReactions();
+      loadReportCommentReactions();
     })();
 
     const channel = supabase
@@ -473,6 +511,11 @@ export function useStalls() {
         { event: "*", schema: "public", table: "stall_report_reactions" },
         () => loadReportReactions(),
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "stall_report_comment_reactions" },
+        () => loadReportCommentReactions(),
+      )
       .on("broadcast", { event: "queue-emote" }, ({ payload }: { payload: QueueEmotePayload }) => {
         if (!payload.sticker_url) return;
         if (!QUEUE_STICKERS.includes(payload.sticker_url as (typeof QUEUE_STICKERS)[number])) {
@@ -500,7 +543,7 @@ export function useStalls() {
       liveChannel.current = null;
       supabase.removeChannel(channel);
     };
-  }, [loadQueue, loadReportComments, loadReportReactions, loadReports]);
+  }, [loadQueue, loadReportCommentReactions, loadReportComments, loadReportReactions, loadReports]);
 
   const geo = useGeoGate(bathroom);
 
@@ -981,33 +1024,59 @@ export function useStalls() {
     }
     if (!data) return false;
 
+    const removedCommentIds = reportComments
+      .filter((comment) => comment.report_id === reportId)
+      .map((comment) => comment.id);
     setReports((prev) => prev.filter((item) => item.id !== reportId));
     setReportComments((prev) => prev.filter((comment) => comment.report_id !== reportId));
     setReportReactions((prev) => prev.filter((reaction) => reaction.report_id !== reportId));
+    setReportCommentReactions((prev) =>
+      prev.filter((reaction) => !removedCommentIds.includes(reaction.comment_id)),
+    );
     return true;
   };
 
   const reactToStallReport = async (reportId: string, emoji: string) => {
     if (
       !ticket ||
+      !ownerSecret ||
       !reports.some((report) => report.id === reportId) ||
       !STALL_REPORT_REACTIONS.includes(emoji as (typeof STALL_REPORT_REACTIONS)[number])
     ) {
       return false;
     }
 
-    const { error } = await supabase.from("stall_report_reactions").upsert(
-      {
-        report_id: reportId,
-        reactor_ticket: ticket,
-        emoji,
-      },
-      { onConflict: "report_id,reactor_ticket,emoji", ignoreDuplicates: true },
+    const hasReacted = reportReactions.some(
+      (reaction) =>
+        reaction.report_id === reportId &&
+        reaction.reactor_ticket === ticket &&
+        reaction.emoji === emoji,
     );
 
+    const { error } = await supabase.rpc("toggle_stall_report_reaction", {
+      target_report_id: reportId,
+      actor_ticket: ticket,
+      actor_owner_secret: ownerSecret,
+      reaction_emoji: emoji,
+    });
+
     if (error) {
-      console.warn("Não foi possível reagir ao mural.", error.message);
+      console.warn("Não foi possível alternar a reação do mural.", error.message);
       return false;
+    }
+
+    if (hasReacted) {
+      setReportReactions((prev) =>
+        prev.filter(
+          (reaction) =>
+            !(
+              reaction.report_id === reportId &&
+              reaction.reactor_ticket === ticket &&
+              reaction.emoji === emoji
+            ),
+        ),
+      );
+      return true;
     }
 
     const optimisticReaction: StallReportReaction = {
@@ -1026,6 +1095,60 @@ export function useStalls() {
       );
       return exists ? prev : [optimisticReaction, ...prev].slice(0, REACTION_LIMIT);
     });
+    return true;
+  };
+
+  const reactToStallReportComment = async (commentId: string, emoji: string) => {
+    if (
+      !ticket ||
+      !ownerSecret ||
+      !reportComments.some((comment) => comment.id === commentId) ||
+      !STALL_REPORT_REACTIONS.includes(emoji as (typeof STALL_REPORT_REACTIONS)[number])
+    ) {
+      return false;
+    }
+
+    const hasReacted = reportCommentReactions.some(
+      (reaction) =>
+        reaction.comment_id === commentId &&
+        reaction.reactor_ticket === ticket &&
+        reaction.emoji === emoji,
+    );
+
+    const { error } = await supabase.rpc("toggle_stall_report_comment_reaction", {
+      target_comment_id: commentId,
+      actor_ticket: ticket,
+      actor_owner_secret: ownerSecret,
+      reaction_emoji: emoji,
+    });
+
+    if (error) {
+      console.warn("Não foi possível alternar a reação do comentário.", error.message);
+      return false;
+    }
+
+    if (hasReacted) {
+      setReportCommentReactions((prev) =>
+        prev.filter(
+          (reaction) =>
+            !(
+              reaction.comment_id === commentId &&
+              reaction.reactor_ticket === ticket &&
+              reaction.emoji === emoji
+            ),
+        ),
+      );
+      return true;
+    }
+
+    const optimisticReaction: StallReportCommentReaction = {
+      id: `local-comment-${commentId}-${ticket}-${emoji}`,
+      comment_id: commentId,
+      reactor_ticket: ticket,
+      emoji,
+      created_at: new Date().toISOString(),
+    };
+    setReportCommentReactions((prev) => [optimisticReaction, ...prev].slice(0, REACTION_LIMIT));
     return true;
   };
 
@@ -1107,6 +1230,7 @@ export function useStalls() {
     reports,
     reportComments,
     reportReactions,
+    reportCommentReactions,
     reportStatus,
     reportReactionsList: STALL_REPORT_REACTIONS,
     ticket,
@@ -1127,6 +1251,7 @@ export function useStalls() {
     updateStallReport,
     removeStallReport,
     reactToStallReport,
+    reactToStallReportComment,
     sendQueueEmote,
   };
 }

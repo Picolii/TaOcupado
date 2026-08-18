@@ -94,11 +94,47 @@ export type Database = {
           },
         ];
       };
+      stall_report_comment_reactions: {
+        Row: {
+          comment_id: string;
+          created_at: string;
+          emoji: string;
+          id: string;
+          reactor_owner_hash: string;
+          reactor_ticket: string;
+        };
+        Insert: {
+          comment_id: string;
+          created_at?: string;
+          emoji: string;
+          id?: string;
+          reactor_owner_hash: string;
+          reactor_ticket: string;
+        };
+        Update: {
+          comment_id?: string;
+          created_at?: string;
+          emoji?: string;
+          id?: string;
+          reactor_owner_hash?: string;
+          reactor_ticket?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "stall_report_comment_reactions_comment_id_fkey";
+            columns: ["comment_id"];
+            isOneToOne: false;
+            referencedRelation: "stall_report_comments";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       stall_report_reactions: {
         Row: {
           created_at: string;
           emoji: string;
           id: string;
+          reactor_owner_hash: string | null;
           reactor_ticket: string;
           report_id: string;
         };
@@ -106,6 +142,7 @@ export type Database = {
           created_at?: string;
           emoji: string;
           id?: string;
+          reactor_owner_hash?: string | null;
           reactor_ticket: string;
           report_id: string;
         };
@@ -113,6 +150,7 @@ export type Database = {
           created_at?: string;
           emoji?: string;
           id?: string;
+          reactor_owner_hash?: string | null;
           reactor_ticket?: string;
           report_id?: string;
         };
@@ -209,6 +247,24 @@ export type Database = {
           admin_token: string;
         };
         Returns: string;
+      };
+      toggle_stall_report_comment_reaction: {
+        Args: {
+          target_comment_id: string;
+          actor_ticket: string;
+          actor_owner_secret: string;
+          reaction_emoji: string;
+        };
+        Returns: boolean;
+      };
+      toggle_stall_report_reaction: {
+        Args: {
+          target_report_id: string;
+          actor_ticket: string;
+          actor_owner_secret: string;
+          reaction_emoji: string;
+        };
+        Returns: boolean;
       };
       update_stall_report: {
         Args: {

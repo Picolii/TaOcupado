@@ -64,6 +64,14 @@ export type StallReportCommentReaction = {
   emoji: string;
   created_at: string;
 };
+export type StallReportVote = {
+  id: string;
+  report_id: string;
+  voter_ticket: string;
+  value: -1 | 1;
+  created_at: string;
+  updated_at: string;
+};
 type QueueEmotePayload = {
   id?: string;
   sticker_url?: string;
@@ -81,6 +89,7 @@ const REPORT_LIMIT = 24;
 const COMMENT_DEBOUNCE_MS = 1200;
 const COMMENT_LIMIT = 120;
 const REACTION_LIMIT = 420;
+const VOTE_LIMIT = 720;
 const STALL_REPORT_SELECT =
   "id,stall_id,stall_label,reporter_ticket,message,image_data_url,created_at,updated_at";
 
@@ -346,6 +355,7 @@ export function useStalls() {
   const [reportCommentReactions, setReportCommentReactions] = useState<
     StallReportCommentReaction[]
   >([]);
+  const [reportVotes, setReportVotes] = useState<StallReportVote[]>([]);
   const [reportStatus, setReportStatus] = useState<"idle" | "sent" | "failed">("idle");
   const [ticket, setTicket] = useState("");
   const [ownerSecret, setOwnerSecret] = useState("");
@@ -447,6 +457,19 @@ export function useStalls() {
     if (data) setReportCommentReactions(data as StallReportCommentReaction[]);
   }, []);
 
+  const loadReportVotes = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("stall_report_votes")
+      .select("id,report_id,voter_ticket,value,created_at,updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(VOTE_LIMIT);
+    if (error) {
+      console.warn("Não foi possível carregar os votos do mural.", error.message);
+      return;
+    }
+    if (data) setReportVotes(data as StallReportVote[]);
+  }, []);
+
   useEffect(() => {
     let active = true;
 
@@ -466,6 +489,7 @@ export function useStalls() {
       loadReportComments();
       loadReportReactions();
       loadReportCommentReactions();
+      loadReportVotes();
     })();
 
     const channel = supabase
@@ -516,6 +540,9 @@ export function useStalls() {
         { event: "*", schema: "public", table: "stall_report_comment_reactions" },
         () => loadReportCommentReactions(),
       )
+      .on("postgres_changes", { event: "*", schema: "public", table: "stall_report_votes" }, () =>
+        loadReportVotes(),
+      )
       .on("broadcast", { event: "queue-emote" }, ({ payload }: { payload: QueueEmotePayload }) => {
         if (!payload.sticker_url) return;
         if (!QUEUE_STICKERS.includes(payload.sticker_url as (typeof QUEUE_STICKERS)[number])) {
@@ -543,7 +570,14 @@ export function useStalls() {
       liveChannel.current = null;
       supabase.removeChannel(channel);
     };
-  }, [loadQueue, loadReportCommentReactions, loadReportComments, loadReportReactions, loadReports]);
+  }, [
+    loadQueue,
+    loadReportCommentReactions,
+    loadReportComments,
+    loadReportReactions,
+    loadReportVotes,
+    loadReports,
+  ]);
 
   const geo = useGeoGate(bathroom);
 
@@ -1030,6 +1064,33 @@ export function useStalls() {
     setReports((prev) => prev.filter((item) => item.id !== reportId));
     setReportComments((prev) => prev.filter((comment) => comment.report_id !== reportId));
     setReportReactions((prev) => prev.filter((reaction) => reaction.report_id !== reportId));
+    setReportVotes((prev) => prev.filter((vote) => vote.report_id !== reportId));
+    setReportCommentReactions((prev) =>
+      prev.filter((reaction) => !removedCommentIds.includes(reaction.comment_id)),
+    );
+    return true;
+  };
+
+  const removeDownvotedStallReport = async (reportId: string) => {
+    if (!reports.some((item) => item.id === reportId)) return false;
+
+    const { data, error } = await supabase.rpc("delete_downvoted_stall_report", {
+      target_report_id: reportId,
+    });
+
+    if (error) {
+      console.warn("Não foi possível remover a ocorrência por votos.", error.message);
+      return false;
+    }
+    if (!data) return false;
+
+    const removedCommentIds = reportComments
+      .filter((comment) => comment.report_id === reportId)
+      .map((comment) => comment.id);
+    setReports((prev) => prev.filter((item) => item.id !== reportId));
+    setReportComments((prev) => prev.filter((comment) => comment.report_id !== reportId));
+    setReportReactions((prev) => prev.filter((reaction) => reaction.report_id !== reportId));
+    setReportVotes((prev) => prev.filter((vote) => vote.report_id !== reportId));
     setReportCommentReactions((prev) =>
       prev.filter((reaction) => !removedCommentIds.includes(reaction.comment_id)),
     );
@@ -1054,6 +1115,51 @@ export function useStalls() {
     setReportCommentReactions((prev) =>
       prev.filter((reaction) => reaction.comment_id !== commentId),
     );
+    return true;
+  };
+
+  const voteStallReport = async (reportId: string, value: -1 | 1) => {
+    if (!ticket || !ownerSecret || !reports.some((report) => report.id === reportId)) {
+      return false;
+    }
+
+    const currentVote = reportVotes.find(
+      (vote) => vote.report_id === reportId && vote.voter_ticket === ticket,
+    );
+
+    const { data, error } = await supabase.rpc("toggle_stall_report_vote", {
+      target_report_id: reportId,
+      actor_ticket: ticket,
+      actor_owner_secret: ownerSecret,
+      next_value: value,
+    });
+
+    if (error) {
+      console.warn("Não foi possível votar no mural.", error.message);
+      return false;
+    }
+
+    const nextValue = data === 1 || data === -1 ? data : 0;
+    setReportVotes((prev) => {
+      const withoutMine = prev.filter(
+        (vote) => !(vote.report_id === reportId && vote.voter_ticket === ticket),
+      );
+
+      if (nextValue === 0) {
+        return withoutMine;
+      }
+
+      const optimisticVote: StallReportVote = {
+        id: currentVote?.id ?? `local-vote-${reportId}-${ticket}`,
+        report_id: reportId,
+        voter_ticket: ticket,
+        value: nextValue,
+        created_at: currentVote?.created_at ?? new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      return [optimisticVote, ...withoutMine].slice(0, VOTE_LIMIT);
+    });
     return true;
   };
 
@@ -1252,6 +1358,7 @@ export function useStalls() {
     reportComments,
     reportReactions,
     reportCommentReactions,
+    reportVotes,
     reportStatus,
     reportReactionsList: STALL_REPORT_REACTIONS,
     ticket,
@@ -1271,7 +1378,9 @@ export function useStalls() {
     submitStallReportComment,
     updateStallReport,
     removeStallReport,
+    removeDownvotedStallReport,
     removeStallReportComment,
+    voteStallReport,
     reactToStallReport,
     reactToStallReportComment,
     sendQueueEmote,

@@ -1,10 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
+  ArrowBigDown,
+  ArrowBigUp,
   ArrowUp,
   Bell,
   Brush,
-  ChevronDown,
-  ChevronUp,
   CloudRain,
   Crosshair,
   Flag,
@@ -883,24 +883,24 @@ function MuralVoteControls({
   onVote: (value: -1 | 1) => void;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card/80 p-1 sm:w-11 sm:flex-col">
+    <div className="inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full border border-border bg-card/80 px-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
       <button
         type="button"
         onClick={() => onVote(1)}
         disabled={disabled}
         className={cn(
-          "inline-flex size-8 items-center justify-center rounded-md transition-colors hover:bg-free/15 hover:text-free",
+          "inline-flex size-6 items-center justify-center rounded-full transition-colors hover:bg-free/15 hover:text-free",
           stats.mine === 1 ? "bg-free/20 text-free" : "text-muted-foreground",
           disabled && "cursor-not-allowed opacity-50",
         )}
         aria-label="Votar para cima"
         title="Upvote"
       >
-        <ChevronUp className="size-5" />
+        <ArrowBigUp className="size-4" />
       </button>
       <span
         className={cn(
-          "min-w-8 text-center text-sm font-black tabular-nums",
+          "min-w-5 px-0.5 text-center text-xs font-black tabular-nums",
           stats.score > 0 && "text-free",
           stats.score < 0 && "text-busy",
           stats.score === 0 && "text-muted-foreground",
@@ -914,14 +914,14 @@ function MuralVoteControls({
         onClick={() => onVote(-1)}
         disabled={disabled}
         className={cn(
-          "inline-flex size-8 items-center justify-center rounded-md transition-colors hover:bg-busy/15 hover:text-busy",
+          "inline-flex size-6 items-center justify-center rounded-full transition-colors hover:bg-busy/15 hover:text-busy",
           stats.mine === -1 ? "bg-busy/20 text-busy" : "text-muted-foreground",
           disabled && "cursor-not-allowed opacity-50",
         )}
         aria-label="Votar para baixo"
         title="Downvote"
       >
-        <ChevronDown className="size-5" />
+        <ArrowBigDown className="size-4" />
       </button>
     </div>
   );
@@ -1326,19 +1326,18 @@ function StallReports({
               <article
                 key={report.id}
                 className={cn(
-                  "grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-lg border border-border bg-background/45 p-3",
+                  "grid gap-3 rounded-lg border border-border bg-background/45 p-3",
                   voteStats.down >= PUBLIC_DELETE_DOWNVOTES && "border-busy/45 bg-busy/5",
                 )}
               >
-                <MuralVoteControls
-                  stats={voteStats}
-                  disabled={disabled}
-                  onVote={(value) => onVote(report.id, value)}
-                />
-
                 <div className="grid min-w-0 gap-3">
                   <div className="grid min-w-0 gap-2 sm:flex sm:items-start sm:justify-between">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <MuralVoteControls
+                        stats={voteStats}
+                        disabled={disabled}
+                        onVote={(value) => onVote(report.id, value)}
+                      />
                       <Badge tone="neutral">{report.stall_label}</Badge>
                       <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
                         {reporterLabel(report.reporter_ticket)}

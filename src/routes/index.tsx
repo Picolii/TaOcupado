@@ -927,6 +927,34 @@ function MuralVoteControls({
   );
 }
 
+function InlineDeleteConfirm({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2 rounded-lg border border-busy/45 bg-busy/10 p-1.5 sm:flex">
+      <button
+        type="button"
+        onClick={onCancel}
+        className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-card px-3 text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+      >
+        Cancelar
+      </button>
+      <button
+        type="button"
+        onClick={onConfirm}
+        className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-busy px-3 text-xs font-bold uppercase tracking-wide text-background transition-colors hover:opacity-90"
+      >
+        <Trash2 className="size-4" />
+        Excluir
+      </button>
+    </div>
+  );
+}
+
 function MuralReactionBar({
   targetId,
   pickerId,
@@ -1064,6 +1092,7 @@ function StallReports({
   onCommentReact,
   onVote,
   onUpdate,
+  onUpdateComment,
   onRemove,
   onRemoveDownvoted,
   onRemoveComment,
@@ -1087,6 +1116,7 @@ function StallReports({
   onCommentReact: ReturnType<typeof useStalls>["reactToStallReportComment"];
   onVote: ReturnType<typeof useStalls>["voteStallReport"];
   onUpdate: ReturnType<typeof useStalls>["updateStallReport"];
+  onUpdateComment: ReturnType<typeof useStalls>["updateStallReportComment"];
   onRemove: ReturnType<typeof useStalls>["removeStallReport"];
   onRemoveDownvoted: ReturnType<typeof useStalls>["removeDownvotedStallReport"];
   onRemoveComment: ReturnType<typeof useStalls>["removeStallReportComment"];
@@ -1100,6 +1130,11 @@ function StallReports({
   const [editMessage, setEditMessage] = useState("");
   const [editImageDataUrl, setEditImageDataUrl] = useState<string | null>(null);
   const [editPending, setEditPending] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [commentEditMessage, setCommentEditMessage] = useState("");
+  const [commentEditImageDataUrl, setCommentEditImageDataUrl] = useState<string | null>(null);
+  const [commentEditPending, setCommentEditPending] = useState(false);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [reactionPickerReportId, setReactionPickerReportId] = useState<string | null>(null);
   const reportsScrollRef = useRef<HTMLElement | null>(null);
   const [reportsScrolled, setReportsScrolled] = useState(false);
@@ -1124,12 +1159,26 @@ function StallReports({
     setEditingReportId(report.id);
     setEditMessage(report.message);
     setEditImageDataUrl(report.image_data_url);
+    setConfirmingDeleteId(null);
   };
 
   const cancelEdit = () => {
     setEditingReportId(null);
     setEditMessage("");
     setEditImageDataUrl(null);
+  };
+
+  const beginCommentEdit = (comment: ReturnType<typeof useStalls>["reportComments"][number]) => {
+    setEditingCommentId(comment.id);
+    setCommentEditMessage(comment.message);
+    setCommentEditImageDataUrl(comment.image_data_url);
+    setConfirmingDeleteId(null);
+  };
+
+  const cancelCommentEdit = () => {
+    setEditingCommentId(null);
+    setCommentEditMessage("");
+    setCommentEditImageDataUrl(null);
   };
 
   const submitEdit = async (
@@ -1149,25 +1198,41 @@ function StallReports({
     if (saved) cancelEdit();
   };
 
+  const submitCommentEdit = async (
+    event: FormEvent,
+    comment: ReturnType<typeof useStalls>["reportComments"][number],
+  ) => {
+    event.preventDefault();
+    if (commentEditPending || (commentEditMessage.trim().length < 1 && !commentEditImageDataUrl)) {
+      return;
+    }
+    setCommentEditPending(true);
+    const saved = await onUpdateComment(
+      comment.id,
+      commentEditMessage,
+      commentEditImageDataUrl,
+      adminUnlocked ? adminToken : undefined,
+    );
+    setCommentEditPending(false);
+    if (saved) cancelCommentEdit();
+  };
+
   const removeReport = async (report: ReturnType<typeof useStalls>["reports"][number]) => {
-    const confirmed = window.confirm("Remover este post do mural?");
-    if (!confirmed) return;
     await onRemove(report.id, adminUnlocked ? adminToken : undefined);
     if (editingReportId === report.id) cancelEdit();
+    setConfirmingDeleteId(null);
   };
 
   const removeComment = async (comment: ReturnType<typeof useStalls>["reportComments"][number]) => {
-    if (!adminUnlocked) return;
-    const confirmed = window.confirm("Remover este comentário?");
-    if (!confirmed) return;
-    await onRemoveComment(comment.id, adminToken);
+    await onRemoveComment(comment.id, adminUnlocked ? adminToken : undefined);
+    if (editingCommentId === comment.id) cancelCommentEdit();
+    setConfirmingDeleteId(null);
   };
 
   const removeDownvotedReport = async (report: ReturnType<typeof useStalls>["reports"][number]) => {
-    const confirmed = window.confirm("Remover este post do mural?");
-    if (!confirmed) return;
     await onRemoveDownvoted(report.id);
     if (editingReportId === report.id) cancelEdit();
+    setConfirmingDeleteId(null);
   };
 
   const handleReportsScroll = () => {
@@ -1320,6 +1385,7 @@ function StallReports({
             const canManageReport = adminUnlocked || report.reporter_ticket === ticket;
             const canPublicDelete = !canManageReport && voteStats.down >= PUBLIC_DELETE_DOWNVOTES;
             const isEditing = editingReportId === report.id;
+            const reportDeleteId = `report:${report.id}`;
             const reportPickerId = `report-${report.id}`;
             const reactionPickerOpen = reactionPickerReportId === reportPickerId;
             return (
@@ -1350,7 +1416,7 @@ function StallReports({
                       )}
                     </div>
                     {(canManageReport || canPublicDelete) && (
-                      <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0 sm:items-center sm:gap-1">
+                      <div className="grid gap-2 sm:flex sm:shrink-0 sm:items-center sm:gap-1">
                         {canManageReport && (
                           <button
                             type="button"
@@ -1363,18 +1429,25 @@ function StallReports({
                             <span className="sm:sr-only">{isEditing ? "Cancelar" : "Editar"}</span>
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            canManageReport ? removeReport(report) : removeDownvotedReport(report)
-                          }
-                          className="inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-lg border border-busy/50 bg-busy/10 px-2 text-xs font-bold uppercase tracking-wide text-busy transition-colors hover:bg-busy/20 sm:size-8 sm:px-0"
-                          aria-label="Remover post"
-                          title="Remover"
-                        >
-                          <Trash2 className="size-4" />
-                          <span className="sm:sr-only">Excluir</span>
-                        </button>
+                        {confirmingDeleteId === reportDeleteId ? (
+                          <InlineDeleteConfirm
+                            onCancel={() => setConfirmingDeleteId(null)}
+                            onConfirm={() =>
+                              canManageReport ? removeReport(report) : removeDownvotedReport(report)
+                            }
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingDeleteId(reportDeleteId)}
+                            className="inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-lg border border-busy/50 bg-busy/10 px-2 text-xs font-bold uppercase tracking-wide text-busy transition-colors hover:bg-busy/20 sm:size-8 sm:px-0"
+                            aria-label="Remover post"
+                            title="Remover"
+                          >
+                            <Trash2 className="size-4" />
+                            <span className="sm:sr-only">Excluir</span>
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1456,6 +1529,10 @@ function StallReports({
                       <div className="scrollbar-dark grid max-h-56 gap-1 overflow-y-auto pr-1">
                         {reportComments.map((comment) => {
                           const commentPickerId = `comment-${comment.id}`;
+                          const canManageComment =
+                            adminUnlocked || comment.commenter_ticket === ticket;
+                          const isCommentEditing = editingCommentId === comment.id;
+                          const commentDeleteId = `comment:${comment.id}`;
                           return (
                             <div
                               key={comment.id}
@@ -1463,33 +1540,131 @@ function StallReports({
                             >
                               <div className="grid min-w-0 gap-1">
                                 <div className="flex min-w-0 items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <span className="mr-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                                      {reporterLabel(comment.commenter_ticket)}
-                                    </span>
-                                    {comment.message && (
-                                      <span className="break-words font-semibold">
-                                        {comment.message}
+                                  <div className="min-w-0 flex-1">
+                                    <div>
+                                      <span className="mr-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                                        {reporterLabel(comment.commenter_ticket)}
                                       </span>
-                                    )}
+                                      {comment.updated_at &&
+                                        comment.updated_at !== comment.created_at && (
+                                          <span className="mr-2 text-[11px] font-semibold text-muted-foreground">
+                                            editado
+                                          </span>
+                                        )}
+                                      {!isCommentEditing && comment.message && (
+                                        <span className="break-words font-semibold">
+                                          {comment.message}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
-                                  {adminUnlocked && (
-                                    <button
-                                      type="button"
-                                      onClick={() => removeComment(comment)}
-                                      className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-busy/45 bg-busy/10 text-busy transition-colors hover:bg-busy/20"
-                                      aria-label="Remover comentário"
-                                      title="Remover comentário"
-                                    >
-                                      <Trash2 className="size-4" />
-                                    </button>
+                                  {canManageComment && (
+                                    <div className="flex shrink-0 items-start gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          isCommentEditing
+                                            ? cancelCommentEdit()
+                                            : beginCommentEdit(comment)
+                                        }
+                                        className="inline-flex size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:text-foreground"
+                                        aria-label={
+                                          isCommentEditing
+                                            ? "Cancelar edição do comentário"
+                                            : "Editar comentário"
+                                        }
+                                        title={isCommentEditing ? "Cancelar" : "Editar"}
+                                      >
+                                        {isCommentEditing ? (
+                                          <X className="size-4" />
+                                        ) : (
+                                          <Pencil className="size-4" />
+                                        )}
+                                      </button>
+                                      {confirmingDeleteId !== commentDeleteId && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setConfirmingDeleteId(commentDeleteId)}
+                                          className="inline-flex size-9 items-center justify-center rounded-lg border border-busy/45 bg-busy/10 text-busy transition-colors hover:bg-busy/20"
+                                          aria-label="Remover comentário"
+                                          title="Remover comentário"
+                                        >
+                                          <Trash2 className="size-4" />
+                                        </button>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
-                                {comment.image_data_url && (
-                                  <SpoilerImage
-                                    src={comment.image_data_url}
-                                    className="mt-2 max-h-52"
+                                {confirmingDeleteId === commentDeleteId && (
+                                  <InlineDeleteConfirm
+                                    onCancel={() => setConfirmingDeleteId(null)}
+                                    onConfirm={() => removeComment(comment)}
                                   />
+                                )}
+                                {isCommentEditing ? (
+                                  <form
+                                    onSubmit={(event) => submitCommentEdit(event, comment)}
+                                    className="grid gap-2 rounded-lg border border-free/40 bg-free/5 p-2"
+                                  >
+                                    <textarea
+                                      value={commentEditMessage}
+                                      onChange={(event) =>
+                                        setCommentEditMessage(event.target.value)
+                                      }
+                                      disabled={commentEditPending}
+                                      maxLength={180}
+                                      rows={2}
+                                      className={cn(
+                                        "min-h-16 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm font-semibold text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-free",
+                                        commentEditPending && "cursor-not-allowed opacity-50",
+                                      )}
+                                    />
+                                    <ReportImagePicker
+                                      imageDataUrl={commentEditImageDataUrl}
+                                      onChange={setCommentEditImageDataUrl}
+                                      disabled={commentEditPending}
+                                      compact
+                                    />
+                                    <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+                                      <button
+                                        type="button"
+                                        onClick={cancelCommentEdit}
+                                        disabled={commentEditPending}
+                                        className={cn(
+                                          iconButtonClass(),
+                                          commentEditPending && "cursor-not-allowed",
+                                        )}
+                                      >
+                                        <X className="size-4" />
+                                        Cancelar
+                                      </button>
+                                      <button
+                                        type="submit"
+                                        disabled={
+                                          commentEditPending ||
+                                          (commentEditMessage.trim().length < 1 &&
+                                            !commentEditImageDataUrl)
+                                        }
+                                        className={cn(
+                                          iconButtonClass(true),
+                                          (commentEditPending ||
+                                            (commentEditMessage.trim().length < 1 &&
+                                              !commentEditImageDataUrl)) &&
+                                            "cursor-not-allowed opacity-50",
+                                        )}
+                                      >
+                                        <Save className="size-4" />
+                                        {commentEditPending ? "Salvando" : "Salvar"}
+                                      </button>
+                                    </div>
+                                  </form>
+                                ) : (
+                                  comment.image_data_url && (
+                                    <SpoilerImage
+                                      src={comment.image_data_url}
+                                      className="mt-2 max-h-52"
+                                    />
+                                  )
                                 )}
                               </div>
                               <MuralReactionBar
@@ -1939,6 +2114,7 @@ function Index() {
     submitStallReport,
     submitStallReportComment,
     updateStallReport,
+    updateStallReportComment,
     removeStallReport,
     removeDownvotedStallReport,
     removeStallReportComment,
@@ -2142,6 +2318,7 @@ function Index() {
             onCommentReact={reactToStallReportComment}
             onVote={voteStallReport}
             onUpdate={updateStallReport}
+            onUpdateComment={updateStallReportComment}
             onRemove={removeStallReport}
             onRemoveDownvoted={removeDownvotedStallReport}
             onRemoveComment={removeStallReportComment}

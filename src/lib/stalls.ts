@@ -49,6 +49,7 @@ export type StallReportComment = {
   message: string;
   image_data_url: string | null;
   created_at: string;
+  updated_at: string | null;
 };
 export type StallReportReaction = {
   id: string;
@@ -92,6 +93,8 @@ const REACTION_LIMIT = 420;
 const VOTE_LIMIT = 720;
 const STALL_REPORT_SELECT =
   "id,stall_id,stall_label,reporter_ticket,message,image_data_url,created_at,updated_at";
+const STALL_REPORT_COMMENT_SELECT =
+  "id,report_id,commenter_ticket,message,image_data_url,created_at,updated_at";
 
 export const STALL_REPORT_REACTIONS = [
   "🔥",
@@ -421,7 +424,7 @@ export function useStalls() {
   const loadReportComments = useCallback(async () => {
     const { data, error } = await supabase
       .from("stall_report_comments")
-      .select("*")
+      .select(STALL_REPORT_COMMENT_SELECT)
       .order("created_at", { ascending: true })
       .limit(COMMENT_LIMIT);
     if (error) {
@@ -975,7 +978,7 @@ export function useStalls() {
   ) => {
     const message = rawMessage.replace(/\s+/g, " ").trim();
     const image_data_url = imageDataUrl ?? null;
-    if (!ticket || !reports.some((report) => report.id === reportId)) return false;
+    if (!ticket || !ownerSecret || !reports.some((report) => report.id === reportId)) return false;
     if (message.length > 180) return false;
     if (message.length < 1 && !image_data_url) return false;
 
@@ -983,16 +986,13 @@ export function useStalls() {
     if (now - (lastCommentAt.current[reportId] ?? 0) < COMMENT_DEBOUNCE_MS) return false;
     lastCommentAt.current[reportId] = now;
 
-    const { data, error } = await supabase
-      .from("stall_report_comments")
-      .insert({
-        report_id: reportId,
-        commenter_ticket: ticket,
-        message,
-        image_data_url,
-      })
-      .select("*")
-      .single();
+    const { data, error } = await supabase.rpc("create_stall_report_comment", {
+      target_report_id: reportId,
+      actor_ticket: ticket,
+      actor_owner_secret: ownerSecret,
+      next_message: message,
+      next_image_data_url: image_data_url,
+    });
 
     if (error) {
       console.warn("Não foi possível comentar no mural.", error.message);
@@ -1098,11 +1098,16 @@ export function useStalls() {
   };
 
   const removeStallReportComment = async (commentId: string, adminToken?: string) => {
-    if (!adminToken || !reportComments.some((comment) => comment.id === commentId)) return false;
+    const comment = reportComments.find((item) => item.id === commentId);
+    if (!comment || (!adminToken && (!ownerSecret || comment.commenter_ticket !== ticket))) {
+      return false;
+    }
 
-    const { data, error } = await supabase.rpc("delete_stall_report_comment", {
+    const { data, error } = await supabase.rpc("delete_stall_report_comment_owned", {
       target_comment_id: commentId,
-      admin_token: adminToken,
+      actor_ticket: ticket,
+      actor_owner_secret: ownerSecret,
+      admin_token: adminToken ?? "",
     });
 
     if (error) {
@@ -1114,6 +1119,42 @@ export function useStalls() {
     setReportComments((prev) => prev.filter((comment) => comment.id !== commentId));
     setReportCommentReactions((prev) =>
       prev.filter((reaction) => reaction.comment_id !== commentId),
+    );
+    return true;
+  };
+
+  const updateStallReportComment = async (
+    commentId: string,
+    rawMessage: string,
+    imageDataUrl?: string | null,
+    adminToken?: string,
+  ) => {
+    const comment = reportComments.find((item) => item.id === commentId);
+    const message = rawMessage.replace(/\s+/g, " ").trim();
+    const image_data_url = imageDataUrl ?? null;
+    if (!comment || (!adminToken && (!ownerSecret || comment.commenter_ticket !== ticket))) {
+      return false;
+    }
+    if (message.length > 180) return false;
+    if (message.length < 1 && !image_data_url) return false;
+
+    const { data, error } = await supabase.rpc("update_stall_report_comment", {
+      target_comment_id: commentId,
+      actor_ticket: ticket,
+      actor_owner_secret: ownerSecret,
+      admin_token: adminToken ?? "",
+      next_message: message,
+      next_image_data_url: image_data_url,
+    });
+
+    if (error) {
+      console.warn("Não foi possível editar o comentário.", error.message);
+      return false;
+    }
+    if (!data) return false;
+
+    setReportComments((prev) =>
+      prev.map((item) => (item.id === commentId ? (data as StallReportComment) : item)),
     );
     return true;
   };
@@ -1377,6 +1418,7 @@ export function useStalls() {
     submitStallReport,
     submitStallReportComment,
     updateStallReport,
+    updateStallReportComment,
     removeStallReport,
     removeDownvotedStallReport,
     removeStallReportComment,

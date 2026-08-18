@@ -3,6 +3,8 @@ import {
   ArrowUp,
   Bell,
   Brush,
+  ChevronDown,
+  ChevronUp,
   CloudRain,
   Crosshair,
   Flag,
@@ -24,6 +26,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -861,6 +864,69 @@ function ReportCommentForm({
   );
 }
 
+const PUBLIC_DELETE_DOWNVOTES = 10;
+
+type MuralVoteStats = {
+  up: number;
+  down: number;
+  score: number;
+  mine: -1 | 0 | 1;
+};
+
+function MuralVoteControls({
+  stats,
+  disabled,
+  onVote,
+}: {
+  stats: MuralVoteStats;
+  disabled: boolean;
+  onVote: (value: -1 | 1) => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-card/80 p-1 sm:w-11 sm:flex-col">
+      <button
+        type="button"
+        onClick={() => onVote(1)}
+        disabled={disabled}
+        className={cn(
+          "inline-flex size-8 items-center justify-center rounded-md transition-colors hover:bg-free/15 hover:text-free",
+          stats.mine === 1 ? "bg-free/20 text-free" : "text-muted-foreground",
+          disabled && "cursor-not-allowed opacity-50",
+        )}
+        aria-label="Votar para cima"
+        title="Upvote"
+      >
+        <ChevronUp className="size-5" />
+      </button>
+      <span
+        className={cn(
+          "min-w-8 text-center text-sm font-black tabular-nums",
+          stats.score > 0 && "text-free",
+          stats.score < 0 && "text-busy",
+          stats.score === 0 && "text-muted-foreground",
+        )}
+        aria-label={`${stats.score} votos`}
+      >
+        {stats.score}
+      </span>
+      <button
+        type="button"
+        onClick={() => onVote(-1)}
+        disabled={disabled}
+        className={cn(
+          "inline-flex size-8 items-center justify-center rounded-md transition-colors hover:bg-busy/15 hover:text-busy",
+          stats.mine === -1 ? "bg-busy/20 text-busy" : "text-muted-foreground",
+          disabled && "cursor-not-allowed opacity-50",
+        )}
+        aria-label="Votar para baixo"
+        title="Downvote"
+      >
+        <ChevronDown className="size-5" />
+      </button>
+    </div>
+  );
+}
+
 function MuralReactionBar({
   targetId,
   pickerId,
@@ -985,6 +1051,7 @@ function StallReports({
   comments,
   reactions,
   commentReactions,
+  votes,
   reactionOptions,
   reportStatus,
   ticket,
@@ -995,8 +1062,10 @@ function StallReports({
   onComment,
   onReact,
   onCommentReact,
+  onVote,
   onUpdate,
   onRemove,
+  onRemoveDownvoted,
   onRemoveComment,
   className,
 }: {
@@ -1005,6 +1074,7 @@ function StallReports({
   comments: ReturnType<typeof useStalls>["reportComments"];
   reactions: ReturnType<typeof useStalls>["reportReactions"];
   commentReactions: ReturnType<typeof useStalls>["reportCommentReactions"];
+  votes: ReturnType<typeof useStalls>["reportVotes"];
   reactionOptions: ReturnType<typeof useStalls>["reportReactionsList"];
   reportStatus: ReturnType<typeof useStalls>["reportStatus"];
   ticket: ReturnType<typeof useStalls>["ticket"];
@@ -1015,8 +1085,10 @@ function StallReports({
   onComment: ReturnType<typeof useStalls>["submitStallReportComment"];
   onReact: ReturnType<typeof useStalls>["reactToStallReport"];
   onCommentReact: ReturnType<typeof useStalls>["reactToStallReportComment"];
+  onVote: ReturnType<typeof useStalls>["voteStallReport"];
   onUpdate: ReturnType<typeof useStalls>["updateStallReport"];
   onRemove: ReturnType<typeof useStalls>["removeStallReport"];
+  onRemoveDownvoted: ReturnType<typeof useStalls>["removeDownvotedStallReport"];
   onRemoveComment: ReturnType<typeof useStalls>["removeStallReportComment"];
   className?: string;
 }) {
@@ -1091,9 +1163,50 @@ function StallReports({
     await onRemoveComment(comment.id, adminToken);
   };
 
+  const removeDownvotedReport = async (report: ReturnType<typeof useStalls>["reports"][number]) => {
+    const confirmed = window.confirm("Remover este post do mural?");
+    if (!confirmed) return;
+    await onRemoveDownvoted(report.id);
+    if (editingReportId === report.id) cancelEdit();
+  };
+
   const handleReportsScroll = () => {
     setReportsScrolled((reportsScrollRef.current?.scrollTop ?? 0) > 80);
   };
+
+  const voteStatsByReport = useMemo(() => {
+    const stats = new Map<string, MuralVoteStats>();
+    reports.forEach((report) => {
+      stats.set(report.id, { up: 0, down: 0, score: 0, mine: 0 });
+    });
+    votes.forEach((vote) => {
+      const current = stats.get(vote.report_id) ?? { up: 0, down: 0, score: 0, mine: 0 };
+      const value = vote.value === 1 ? 1 : -1;
+      if (value === 1) {
+        current.up += 1;
+      } else {
+        current.down += 1;
+      }
+      current.score += value;
+      if (vote.voter_ticket === ticket) {
+        current.mine = value;
+      }
+      stats.set(vote.report_id, current);
+    });
+    return stats;
+  }, [reports, ticket, votes]);
+
+  const rankedReports = useMemo(
+    () =>
+      [...reports].sort((a, b) => {
+        const aStats = voteStatsByReport.get(a.id) ?? { up: 0, down: 0, score: 0, mine: 0 };
+        const bStats = voteStatsByReport.get(b.id) ?? { up: 0, down: 0, score: 0, mine: 0 };
+        if (bStats.score !== aStats.score) return bStats.score - aStats.score;
+        if (aStats.down !== bStats.down) return aStats.down - bStats.down;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }),
+    [reports, voteStatsByReport],
+  );
 
   return (
     <section
@@ -1193,196 +1306,218 @@ function StallReports({
             mural limpo
           </div>
         ) : (
-          reports.map((report) => {
+          rankedReports.map((report) => {
             const reportComments = comments.filter((comment) => comment.report_id === report.id);
             const reportReactions = reactions.filter(
               (reaction) => reaction.report_id === report.id,
             );
+            const voteStats = voteStatsByReport.get(report.id) ?? {
+              up: 0,
+              down: 0,
+              score: 0,
+              mine: 0,
+            };
             const canManageReport = adminUnlocked || report.reporter_ticket === ticket;
+            const canPublicDelete = !canManageReport && voteStats.down >= PUBLIC_DELETE_DOWNVOTES;
             const isEditing = editingReportId === report.id;
             const reportPickerId = `report-${report.id}`;
             const reactionPickerOpen = reactionPickerReportId === reportPickerId;
             return (
               <article
                 key={report.id}
-                className="grid gap-3 rounded-lg border border-border bg-background/45 p-3"
-              >
-                <div className="grid min-w-0 gap-2 sm:flex sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <Badge tone="neutral">{report.stall_label}</Badge>
-                    <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                      {reporterLabel(report.reporter_ticket)}
-                    </span>
-                    <span className="text-xs font-semibold text-muted-foreground">
-                      {formatReportTime(report.created_at)}
-                    </span>
-                    {report.updated_at && report.updated_at !== report.created_at && (
-                      <span className="text-xs font-semibold text-muted-foreground">editado</span>
-                    )}
-                  </div>
-                  {canManageReport && (
-                    <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0 sm:items-center sm:gap-1">
-                      <button
-                        type="button"
-                        onClick={() => (isEditing ? cancelEdit() : beginEdit(report))}
-                        className="inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-lg border border-border bg-card px-2 text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground sm:size-8 sm:px-0"
-                        aria-label={isEditing ? "Cancelar edição do post" : "Editar post"}
-                        title={isEditing ? "Cancelar" : "Editar"}
-                      >
-                        {isEditing ? <X className="size-4" /> : <Pencil className="size-4" />}
-                        <span className="sm:sr-only">{isEditing ? "Cancelar" : "Editar"}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeReport(report)}
-                        className="inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-lg border border-busy/50 bg-busy/10 px-2 text-xs font-bold uppercase tracking-wide text-busy transition-colors hover:bg-busy/20 sm:size-8 sm:px-0"
-                        aria-label="Remover post"
-                        title="Remover"
-                      >
-                        <Trash2 className="size-4" />
-                        <span className="sm:sr-only">Excluir</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-                {isEditing ? (
-                  <form
-                    onSubmit={(event) => submitEdit(event, report)}
-                    className="grid gap-2 rounded-lg border border-free/40 bg-free/5 p-2"
-                  >
-                    <textarea
-                      value={editMessage}
-                      onChange={(event) => setEditMessage(event.target.value)}
-                      disabled={editPending}
-                      maxLength={220}
-                      rows={2}
-                      className={cn(
-                        "min-h-20 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm font-semibold text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-free",
-                        editPending && "cursor-not-allowed opacity-50",
-                      )}
-                    />
-                    <ReportImagePicker
-                      imageDataUrl={editImageDataUrl}
-                      onChange={setEditImageDataUrl}
-                      disabled={editPending}
-                      compact
-                    />
-                    <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
-                      <button
-                        type="button"
-                        onClick={cancelEdit}
-                        disabled={editPending}
-                        className={cn(iconButtonClass(), editPending && "cursor-not-allowed")}
-                      >
-                        <X className="size-4" />
-                        Cancelar
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={
-                          editPending || (editMessage.trim().length < 2 && !editImageDataUrl)
-                        }
-                        className={cn(
-                          iconButtonClass(true),
-                          (editPending || (editMessage.trim().length < 2 && !editImageDataUrl)) &&
-                            "cursor-not-allowed opacity-50",
-                        )}
-                      >
-                        <Save className="size-4" />
-                        {editPending ? "Salvando" : "Salvar"}
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <>
-                    {report.message && (
-                      <p className="break-words text-sm font-semibold text-foreground">
-                        {report.message}
-                      </p>
-                    )}
-                    {report.image_data_url && (
-                      <SpoilerImage src={report.image_data_url} className="max-h-96" />
-                    )}
-                  </>
+                className={cn(
+                  "grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-lg border border-border bg-background/45 p-3",
+                  voteStats.down >= PUBLIC_DELETE_DOWNVOTES && "border-busy/45 bg-busy/5",
                 )}
-
-                <MuralReactionBar
-                  targetId={report.id}
-                  pickerId={reportPickerId}
-                  reactions={reportReactions}
-                  reactionOptions={reactionOptions}
-                  ticket={ticket}
+              >
+                <MuralVoteControls
+                  stats={voteStats}
                   disabled={disabled}
-                  pickerOpen={reactionPickerOpen}
-                  onPickerChange={setReactionPickerReportId}
-                  onReact={onReact}
+                  onVote={(value) => onVote(report.id, value)}
                 />
 
-                <div className="grid gap-2 rounded-lg border border-border/70 bg-card/45 p-2">
-                  {reportComments.length > 0 && (
-                    <div className="scrollbar-dark grid max-h-56 gap-1 overflow-y-auto pr-1">
-                      {reportComments.map((comment) => {
-                        const commentPickerId = `comment-${comment.id}`;
-                        return (
-                          <div
-                            key={comment.id}
-                            className="grid gap-2 rounded-md bg-background/55 px-2 py-1.5 text-sm"
+                <div className="grid min-w-0 gap-3">
+                  <div className="grid min-w-0 gap-2 sm:flex sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <Badge tone="neutral">{report.stall_label}</Badge>
+                      <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                        {reporterLabel(report.reporter_ticket)}
+                      </span>
+                      <span className="text-xs font-semibold text-muted-foreground">
+                        {formatReportTime(report.created_at)}
+                      </span>
+                      {report.updated_at && report.updated_at !== report.created_at && (
+                        <span className="text-xs font-semibold text-muted-foreground">editado</span>
+                      )}
+                    </div>
+                    {(canManageReport || canPublicDelete) && (
+                      <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0 sm:items-center sm:gap-1">
+                        {canManageReport && (
+                          <button
+                            type="button"
+                            onClick={() => (isEditing ? cancelEdit() : beginEdit(report))}
+                            className="inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-lg border border-border bg-card px-2 text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground sm:size-8 sm:px-0"
+                            aria-label={isEditing ? "Cancelar edição do post" : "Editar post"}
+                            title={isEditing ? "Cancelar" : "Editar"}
                           >
-                            <div className="grid min-w-0 gap-1">
-                              <div className="flex min-w-0 items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <span className="mr-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                                    {reporterLabel(comment.commenter_ticket)}
-                                  </span>
-                                  {comment.message && (
-                                    <span className="break-words font-semibold">
-                                      {comment.message}
+                            {isEditing ? <X className="size-4" /> : <Pencil className="size-4" />}
+                            <span className="sm:sr-only">{isEditing ? "Cancelar" : "Editar"}</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            canManageReport ? removeReport(report) : removeDownvotedReport(report)
+                          }
+                          className="inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-lg border border-busy/50 bg-busy/10 px-2 text-xs font-bold uppercase tracking-wide text-busy transition-colors hover:bg-busy/20 sm:size-8 sm:px-0"
+                          aria-label="Remover post"
+                          title="Remover"
+                        >
+                          <Trash2 className="size-4" />
+                          <span className="sm:sr-only">Excluir</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {isEditing ? (
+                    <form
+                      onSubmit={(event) => submitEdit(event, report)}
+                      className="grid gap-2 rounded-lg border border-free/40 bg-free/5 p-2"
+                    >
+                      <textarea
+                        value={editMessage}
+                        onChange={(event) => setEditMessage(event.target.value)}
+                        disabled={editPending}
+                        maxLength={220}
+                        rows={2}
+                        className={cn(
+                          "min-h-20 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm font-semibold text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-free",
+                          editPending && "cursor-not-allowed opacity-50",
+                        )}
+                      />
+                      <ReportImagePicker
+                        imageDataUrl={editImageDataUrl}
+                        onChange={setEditImageDataUrl}
+                        disabled={editPending}
+                        compact
+                      />
+                      <div className="grid grid-cols-2 gap-2 sm:flex sm:justify-end">
+                        <button
+                          type="button"
+                          onClick={cancelEdit}
+                          disabled={editPending}
+                          className={cn(iconButtonClass(), editPending && "cursor-not-allowed")}
+                        >
+                          <X className="size-4" />
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={
+                            editPending || (editMessage.trim().length < 2 && !editImageDataUrl)
+                          }
+                          className={cn(
+                            iconButtonClass(true),
+                            (editPending || (editMessage.trim().length < 2 && !editImageDataUrl)) &&
+                              "cursor-not-allowed opacity-50",
+                          )}
+                        >
+                          <Save className="size-4" />
+                          {editPending ? "Salvando" : "Salvar"}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      {report.message && (
+                        <p className="break-words text-sm font-semibold text-foreground">
+                          {report.message}
+                        </p>
+                      )}
+                      {report.image_data_url && (
+                        <SpoilerImage src={report.image_data_url} className="max-h-96" />
+                      )}
+                    </>
+                  )}
+
+                  <MuralReactionBar
+                    targetId={report.id}
+                    pickerId={reportPickerId}
+                    reactions={reportReactions}
+                    reactionOptions={reactionOptions}
+                    ticket={ticket}
+                    disabled={disabled}
+                    pickerOpen={reactionPickerOpen}
+                    onPickerChange={setReactionPickerReportId}
+                    onReact={onReact}
+                  />
+
+                  <div className="grid gap-2 rounded-lg border border-border/70 bg-card/45 p-2">
+                    {reportComments.length > 0 && (
+                      <div className="scrollbar-dark grid max-h-56 gap-1 overflow-y-auto pr-1">
+                        {reportComments.map((comment) => {
+                          const commentPickerId = `comment-${comment.id}`;
+                          return (
+                            <div
+                              key={comment.id}
+                              className="grid gap-2 rounded-md bg-background/55 px-2 py-1.5 text-sm"
+                            >
+                              <div className="grid min-w-0 gap-1">
+                                <div className="flex min-w-0 items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <span className="mr-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      {reporterLabel(comment.commenter_ticket)}
                                     </span>
+                                    {comment.message && (
+                                      <span className="break-words font-semibold">
+                                        {comment.message}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {adminUnlocked && (
+                                    <button
+                                      type="button"
+                                      onClick={() => removeComment(comment)}
+                                      className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-busy/45 bg-busy/10 text-busy transition-colors hover:bg-busy/20"
+                                      aria-label="Remover comentário"
+                                      title="Remover comentário"
+                                    >
+                                      <Trash2 className="size-4" />
+                                    </button>
                                   )}
                                 </div>
-                                {adminUnlocked && (
-                                  <button
-                                    type="button"
-                                    onClick={() => removeComment(comment)}
-                                    className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-busy/45 bg-busy/10 text-busy transition-colors hover:bg-busy/20"
-                                    aria-label="Remover comentário"
-                                    title="Remover comentário"
-                                  >
-                                    <Trash2 className="size-4" />
-                                  </button>
+                                {comment.image_data_url && (
+                                  <SpoilerImage
+                                    src={comment.image_data_url}
+                                    className="mt-2 max-h-52"
+                                  />
                                 )}
                               </div>
-                              {comment.image_data_url && (
-                                <SpoilerImage
-                                  src={comment.image_data_url}
-                                  className="mt-2 max-h-52"
-                                />
-                              )}
+                              <MuralReactionBar
+                                targetId={comment.id}
+                                pickerId={commentPickerId}
+                                reactions={commentReactions.filter(
+                                  (reaction) => reaction.comment_id === comment.id,
+                                )}
+                                reactionOptions={reactionOptions}
+                                ticket={ticket}
+                                disabled={disabled}
+                                pickerOpen={reactionPickerReportId === commentPickerId}
+                                compact
+                                onPickerChange={setReactionPickerReportId}
+                                onReact={onCommentReact}
+                              />
                             </div>
-                            <MuralReactionBar
-                              targetId={comment.id}
-                              pickerId={commentPickerId}
-                              reactions={commentReactions.filter(
-                                (reaction) => reaction.comment_id === comment.id,
-                              )}
-                              reactionOptions={reactionOptions}
-                              ticket={ticket}
-                              disabled={disabled}
-                              pickerOpen={reactionPickerReportId === commentPickerId}
-                              compact
-                              onPickerChange={setReactionPickerReportId}
-                              onReact={onCommentReact}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  <ReportCommentForm
-                    reportId={report.id}
-                    disabled={disabled}
-                    onSubmit={onComment}
-                  />
+                          );
+                        })}
+                      </div>
+                    )}
+                    <ReportCommentForm
+                      reportId={report.id}
+                      disabled={disabled}
+                      onSubmit={onComment}
+                    />
+                  </div>
                 </div>
               </article>
             );
@@ -1789,6 +1924,7 @@ function Index() {
     reportComments,
     reportReactions,
     reportCommentReactions,
+    reportVotes,
     reportReactionsList,
     reportStatus,
     ticket,
@@ -1805,7 +1941,9 @@ function Index() {
     submitStallReportComment,
     updateStallReport,
     removeStallReport,
+    removeDownvotedStallReport,
     removeStallReportComment,
+    voteStallReport,
     reactToStallReport,
     reactToStallReportComment,
     testQueueNotification,
@@ -1992,6 +2130,7 @@ function Index() {
             comments={reportComments}
             reactions={reportReactions}
             commentReactions={reportCommentReactions}
+            votes={reportVotes}
             reactionOptions={reportReactionsList}
             reportStatus={reportStatus}
             ticket={ticket}
@@ -2002,8 +2141,10 @@ function Index() {
             onComment={submitStallReportComment}
             onReact={reactToStallReport}
             onCommentReact={reactToStallReportComment}
+            onVote={voteStallReport}
             onUpdate={updateStallReport}
             onRemove={removeStallReport}
+            onRemoveDownvoted={removeDownvotedStallReport}
             onRemoveComment={removeStallReportComment}
             className="lg:h-full lg:max-h-full lg:overflow-y-auto lg:overscroll-contain"
           />

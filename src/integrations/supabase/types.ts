@@ -164,6 +164,44 @@ export type Database = {
           },
         ];
       };
+      stall_report_votes: {
+        Row: {
+          created_at: string;
+          id: string;
+          report_id: string;
+          updated_at: string;
+          value: number;
+          voter_owner_hash: string;
+          voter_ticket: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          report_id: string;
+          updated_at?: string;
+          value: number;
+          voter_owner_hash: string;
+          voter_ticket: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          report_id?: string;
+          updated_at?: string;
+          value?: number;
+          voter_owner_hash?: string;
+          voter_ticket?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "stall_report_votes_report_id_fkey";
+            columns: ["report_id"];
+            isOneToOne: false;
+            referencedRelation: "stall_reports";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       stall_reports: {
         Row: {
           created_at: string;
@@ -255,6 +293,12 @@ export type Database = {
         };
         Returns: string;
       };
+      delete_downvoted_stall_report: {
+        Args: {
+          target_report_id: string;
+        };
+        Returns: string;
+      };
       toggle_stall_report_comment_reaction: {
         Args: {
           target_comment_id: string;
@@ -272,6 +316,15 @@ export type Database = {
           reaction_emoji: string;
         };
         Returns: boolean;
+      };
+      toggle_stall_report_vote: {
+        Args: {
+          target_report_id: string;
+          actor_ticket: string;
+          actor_owner_secret: string;
+          next_value: number;
+        };
+        Returns: number;
       };
       update_stall_report: {
         Args: {

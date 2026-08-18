@@ -66,7 +66,9 @@ export type Database = {
           id: string;
           image_data_url: string | null;
           message: string;
+          owner_hash: string | null;
           report_id: string;
+          updated_at: string | null;
         };
         Insert: {
           commenter_ticket: string;
@@ -74,7 +76,9 @@ export type Database = {
           id?: string;
           image_data_url?: string | null;
           message: string;
+          owner_hash?: string | null;
           report_id: string;
+          updated_at?: string | null;
         };
         Update: {
           commenter_ticket?: string;
@@ -82,7 +86,9 @@ export type Database = {
           id?: string;
           image_data_url?: string | null;
           message?: string;
+          owner_hash?: string | null;
           report_id?: string;
+          updated_at?: string | null;
         };
         Relationships: [
           {
@@ -278,6 +284,24 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      create_stall_report_comment: {
+        Args: {
+          target_report_id: string;
+          actor_ticket: string;
+          actor_owner_secret: string;
+          next_message: string;
+          next_image_data_url: string | null;
+        };
+        Returns: {
+          id: string;
+          report_id: string;
+          commenter_ticket: string;
+          message: string;
+          image_data_url: string | null;
+          created_at: string;
+          updated_at: string | null;
+        };
+      };
       delete_stall_report: {
         Args: {
           report_id: string;
@@ -296,6 +320,15 @@ export type Database = {
       delete_downvoted_stall_report: {
         Args: {
           target_report_id: string;
+        };
+        Returns: string;
+      };
+      delete_stall_report_comment_owned: {
+        Args: {
+          target_comment_id: string;
+          actor_ticket: string;
+          actor_owner_secret: string;
+          admin_token: string;
         };
         Returns: string;
       };
@@ -325,6 +358,25 @@ export type Database = {
           next_value: number;
         };
         Returns: number;
+      };
+      update_stall_report_comment: {
+        Args: {
+          target_comment_id: string;
+          actor_ticket: string;
+          actor_owner_secret: string;
+          admin_token: string;
+          next_message: string;
+          next_image_data_url: string | null;
+        };
+        Returns: {
+          id: string;
+          report_id: string;
+          commenter_ticket: string;
+          message: string;
+          image_data_url: string | null;
+          created_at: string;
+          updated_at: string | null;
+        };
       };
       update_stall_report: {
         Args: {

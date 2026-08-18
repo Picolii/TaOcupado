@@ -997,6 +997,7 @@ function StallReports({
   onCommentReact,
   onUpdate,
   onRemove,
+  onRemoveComment,
   className,
 }: {
   stalls: ReturnType<typeof useStalls>["stalls"];
@@ -1016,6 +1017,7 @@ function StallReports({
   onCommentReact: ReturnType<typeof useStalls>["reactToStallReportComment"];
   onUpdate: ReturnType<typeof useStalls>["updateStallReport"];
   onRemove: ReturnType<typeof useStalls>["removeStallReport"];
+  onRemoveComment: ReturnType<typeof useStalls>["removeStallReportComment"];
   className?: string;
 }) {
   const [selectedStallId, setSelectedStallId] = useState("");
@@ -1080,6 +1082,13 @@ function StallReports({
     if (!confirmed) return;
     await onRemove(report.id, adminUnlocked ? adminToken : undefined);
     if (editingReportId === report.id) cancelEdit();
+  };
+
+  const removeComment = async (comment: ReturnType<typeof useStalls>["reportComments"][number]) => {
+    if (!adminUnlocked) return;
+    const confirmed = window.confirm("Remover este comentário?");
+    if (!confirmed) return;
+    await onRemoveComment(comment.id, adminToken);
   };
 
   const handleReportsScroll = () => {
@@ -1198,7 +1207,7 @@ function StallReports({
                 key={report.id}
                 className="grid gap-3 rounded-lg border border-border bg-background/45 p-3"
               >
-                <div className="flex min-w-0 items-start justify-between gap-2">
+                <div className="grid min-w-0 gap-2 sm:flex sm:items-start sm:justify-between">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <Badge tone="neutral">{report.stall_label}</Badge>
                     <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
@@ -1212,24 +1221,26 @@ function StallReports({
                     )}
                   </div>
                   {canManageReport && (
-                    <div className="flex shrink-0 items-center gap-1">
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0 sm:items-center sm:gap-1">
                       <button
                         type="button"
                         onClick={() => (isEditing ? cancelEdit() : beginEdit(report))}
-                        className="inline-flex size-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:text-foreground"
-                        aria-label={isEditing ? "Cancelar edicao do post" : "Editar post"}
+                        className="inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-lg border border-border bg-card px-2 text-xs font-bold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground sm:size-8 sm:px-0"
+                        aria-label={isEditing ? "Cancelar edição do post" : "Editar post"}
                         title={isEditing ? "Cancelar" : "Editar"}
                       >
                         {isEditing ? <X className="size-4" /> : <Pencil className="size-4" />}
+                        <span className="sm:sr-only">{isEditing ? "Cancelar" : "Editar"}</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => removeReport(report)}
-                        className="inline-flex size-8 items-center justify-center rounded-lg border border-busy/50 bg-busy/10 text-busy transition-colors hover:bg-busy/20"
+                        className="inline-flex h-10 min-w-0 items-center justify-center gap-2 rounded-lg border border-busy/50 bg-busy/10 px-2 text-xs font-bold uppercase tracking-wide text-busy transition-colors hover:bg-busy/20 sm:size-8 sm:px-0"
                         aria-label="Remover post"
                         title="Remover"
                       >
                         <Trash2 className="size-4" />
+                        <span className="sm:sr-only">Excluir</span>
                       </button>
                     </div>
                   )}
@@ -1317,13 +1328,30 @@ function StallReports({
                             key={comment.id}
                             className="grid gap-2 rounded-md bg-background/55 px-2 py-1.5 text-sm"
                           >
-                            <div>
-                              <span className="mr-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                                {reporterLabel(comment.commenter_ticket)}
-                              </span>
-                              {comment.message && (
-                                <span className="break-words font-semibold">{comment.message}</span>
-                              )}
+                            <div className="grid min-w-0 gap-1">
+                              <div className="flex min-w-0 items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <span className="mr-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                                    {reporterLabel(comment.commenter_ticket)}
+                                  </span>
+                                  {comment.message && (
+                                    <span className="break-words font-semibold">
+                                      {comment.message}
+                                    </span>
+                                  )}
+                                </div>
+                                {adminUnlocked && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeComment(comment)}
+                                    className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-busy/45 bg-busy/10 text-busy transition-colors hover:bg-busy/20"
+                                    aria-label="Remover comentário"
+                                    title="Remover comentário"
+                                  >
+                                    <Trash2 className="size-4" />
+                                  </button>
+                                )}
+                              </div>
                               {comment.image_data_url && (
                                 <SpoilerImage
                                   src={comment.image_data_url}
@@ -1777,6 +1805,7 @@ function Index() {
     submitStallReportComment,
     updateStallReport,
     removeStallReport,
+    removeStallReportComment,
     reactToStallReport,
     reactToStallReportComment,
     testQueueNotification,
@@ -1975,6 +2004,7 @@ function Index() {
             onCommentReact={reactToStallReportComment}
             onUpdate={updateStallReport}
             onRemove={removeStallReport}
+            onRemoveComment={removeStallReportComment}
             className="lg:h-full lg:max-h-full lg:overflow-y-auto lg:overscroll-contain"
           />
         </div>

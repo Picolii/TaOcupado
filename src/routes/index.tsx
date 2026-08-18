@@ -861,11 +861,130 @@ function ReportCommentForm({
   );
 }
 
+function MuralReactionBar({
+  targetId,
+  pickerId,
+  reactions,
+  reactionOptions,
+  ticket,
+  disabled,
+  pickerOpen,
+  compact = false,
+  onPickerChange,
+  onReact,
+}: {
+  targetId: string;
+  pickerId: string;
+  reactions: Array<{ emoji: string; reactor_ticket: string }>;
+  reactionOptions: ReturnType<typeof useStalls>["reportReactionsList"];
+  ticket: string;
+  disabled: boolean;
+  pickerOpen: boolean;
+  compact?: boolean;
+  onPickerChange: (pickerId: string | null) => void;
+  onReact: (targetId: string, emoji: string) => Promise<boolean>;
+}) {
+  const reactionCounts = reactionOptions
+    .map((emoji) => {
+      const emojiReactions = reactions.filter((reaction) => reaction.emoji === emoji);
+      return {
+        emoji,
+        count: emojiReactions.length,
+        mine: emojiReactions.some((reaction) => reaction.reactor_ticket === ticket),
+      };
+    })
+    .filter((reaction) => reaction.count > 0);
+
+  const react = async (emoji: string) => {
+    const reacted = await onReact(targetId, emoji);
+    if (reacted) onPickerChange(null);
+  };
+
+  return (
+    <div className={cn("flex flex-wrap items-center gap-2", compact && "gap-1.5")}>
+      {reactionCounts.map(({ emoji, count, mine }) => (
+        <button
+          key={emoji}
+          type="button"
+          onClick={() => react(emoji)}
+          disabled={disabled}
+          className={cn(
+            "inline-flex h-8 min-w-12 items-center justify-center gap-1 rounded-lg border px-2 text-sm font-bold transition-colors",
+            mine
+              ? "border-free/70 bg-free/20 text-free shadow-[0_0_18px_rgba(58,214,124,0.15)]"
+              : "border-border bg-card/70 text-muted-foreground hover:border-free/50 hover:text-foreground",
+            compact && "h-7 min-w-10 text-xs",
+            disabled && "cursor-not-allowed opacity-50",
+          )}
+          aria-label={
+            mine
+              ? `Remover sua reação ${emoji}, ${count} no total`
+              : `Reagir com ${emoji}, ${count} no total`
+          }
+          title={mine ? "Você reagiu. Clique para remover." : "Clique para reagir."}
+        >
+          <span>{emoji}</span>
+          <span className="text-[11px] tabular-nums">{count}</span>
+        </button>
+      ))}
+
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => onPickerChange(pickerOpen ? null : pickerId)}
+          disabled={disabled}
+          className={cn(
+            "inline-flex size-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-free/70 hover:bg-free/10 hover:text-free",
+            pickerOpen && "border-free/70 bg-free/15 text-free",
+            compact && "size-7",
+            disabled && "cursor-not-allowed opacity-50",
+          )}
+          aria-label="Adicionar reação"
+          title="Reagir"
+        >
+          <Plus className="size-4" />
+        </button>
+
+        {pickerOpen && (
+          <div
+            className={cn(
+              "absolute bottom-10 left-0 z-30 grid w-64 grid-cols-7 gap-1 rounded-lg border border-border bg-card p-2 shadow-2xl",
+              compact && "bottom-9 w-60",
+            )}
+          >
+            {reactionOptions.map((emoji) => {
+              const mine = reactions.some(
+                (reaction) => reaction.emoji === emoji && reaction.reactor_ticket === ticket,
+              );
+              return (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => react(emoji)}
+                  className={cn(
+                    "inline-flex size-8 items-center justify-center rounded-md text-base transition-colors hover:bg-free/15",
+                    mine && "bg-free/20 text-free ring-1 ring-free/60",
+                  )}
+                  aria-label={mine ? `Remover reação ${emoji}` : `Reagir com ${emoji}`}
+                  title={mine ? "Remover sua reação" : "Reagir"}
+                >
+                  {emoji}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function StallReports({
   stalls,
   reports,
   comments,
   reactions,
+  commentReactions,
   reactionOptions,
   reportStatus,
   ticket,
@@ -875,6 +994,7 @@ function StallReports({
   onSubmit,
   onComment,
   onReact,
+  onCommentReact,
   onUpdate,
   onRemove,
   className,
@@ -883,6 +1003,7 @@ function StallReports({
   reports: ReturnType<typeof useStalls>["reports"];
   comments: ReturnType<typeof useStalls>["reportComments"];
   reactions: ReturnType<typeof useStalls>["reportReactions"];
+  commentReactions: ReturnType<typeof useStalls>["reportCommentReactions"];
   reactionOptions: ReturnType<typeof useStalls>["reportReactionsList"];
   reportStatus: ReturnType<typeof useStalls>["reportStatus"];
   ticket: ReturnType<typeof useStalls>["ticket"];
@@ -892,6 +1013,7 @@ function StallReports({
   onSubmit: ReturnType<typeof useStalls>["submitStallReport"];
   onComment: ReturnType<typeof useStalls>["submitStallReportComment"];
   onReact: ReturnType<typeof useStalls>["reactToStallReport"];
+  onCommentReact: ReturnType<typeof useStalls>["reactToStallReportComment"];
   onUpdate: ReturnType<typeof useStalls>["updateStallReport"];
   onRemove: ReturnType<typeof useStalls>["removeStallReport"];
   className?: string;
@@ -922,11 +1044,6 @@ function StallReports({
       setMessage("");
       setImageDataUrl(null);
     }
-  };
-
-  const sendReaction = async (reportId: string, emoji: string) => {
-    const reacted = await onReact(reportId, emoji);
-    if (reacted) setReactionPickerReportId(null);
   };
 
   const beginEdit = (report: ReturnType<typeof useStalls>["reports"][number]) => {
@@ -1072,15 +1189,10 @@ function StallReports({
             const reportReactions = reactions.filter(
               (reaction) => reaction.report_id === report.id,
             );
-            const reactionCounts = reactionOptions
-              .map((emoji) => ({
-                emoji,
-                count: reportReactions.filter((reaction) => reaction.emoji === emoji).length,
-              }))
-              .filter((reaction) => reaction.count > 0);
             const canManageReport = adminUnlocked || report.reporter_ticket === ticket;
             const isEditing = editingReportId === report.id;
-            const reactionPickerOpen = reactionPickerReportId === report.id;
+            const reportPickerId = `report-${report.id}`;
+            const reactionPickerOpen = reactionPickerReportId === reportPickerId;
             return (
               <article
                 key={report.id}
@@ -1183,75 +1295,59 @@ function StallReports({
                   </>
                 )}
 
-                <div className="flex flex-wrap items-center gap-2">
-                  {reactionCounts.map(({ emoji, count }) => (
-                    <span
-                      key={emoji}
-                      className="inline-flex h-8 min-w-12 items-center justify-center gap-1 rounded-lg border border-free/60 bg-free/15 px-2 text-sm font-bold text-free"
-                      aria-label={`${count} reacoes com ${emoji}`}
-                    >
-                      <span>{emoji}</span>
-                      <span className="text-[11px] tabular-nums">{count}</span>
-                    </span>
-                  ))}
-
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setReactionPickerReportId((current) =>
-                          current === report.id ? null : report.id,
-                        )
-                      }
-                      disabled={disabled}
-                      className={cn(
-                        "inline-flex size-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-free/70 hover:bg-free/10 hover:text-free",
-                        reactionPickerOpen && "border-free/70 bg-free/15 text-free",
-                        disabled && "cursor-not-allowed opacity-50",
-                      )}
-                      aria-label="Adicionar reacao"
-                      title="Reagir"
-                    >
-                      <Plus className="size-4" />
-                    </button>
-
-                    {reactionPickerOpen && (
-                      <div className="absolute bottom-10 left-0 z-30 grid w-52 grid-cols-7 gap-1 rounded-lg border border-border bg-card p-2 shadow-2xl">
-                        {reactionOptions.map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            onClick={() => sendReaction(report.id, emoji)}
-                            className="inline-flex size-7 items-center justify-center rounded-md text-base transition-colors hover:bg-free/15"
-                            aria-label={`Reagir com ${emoji}`}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <MuralReactionBar
+                  targetId={report.id}
+                  pickerId={reportPickerId}
+                  reactions={reportReactions}
+                  reactionOptions={reactionOptions}
+                  ticket={ticket}
+                  disabled={disabled}
+                  pickerOpen={reactionPickerOpen}
+                  onPickerChange={setReactionPickerReportId}
+                  onReact={onReact}
+                />
 
                 <div className="grid gap-2 rounded-lg border border-border/70 bg-card/45 p-2">
                   {reportComments.length > 0 && (
-                    <div className="grid gap-1">
-                      {reportComments.slice(-4).map((comment) => (
-                        <div
-                          key={comment.id}
-                          className="rounded-md bg-background/55 px-2 py-1.5 text-sm"
-                        >
-                          <span className="mr-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                            {reporterLabel(comment.commenter_ticket)}
-                          </span>
-                          {comment.message && (
-                            <span className="break-words font-semibold">{comment.message}</span>
-                          )}
-                          {comment.image_data_url && (
-                            <SpoilerImage src={comment.image_data_url} className="mt-2 max-h-52" />
-                          )}
-                        </div>
-                      ))}
+                    <div className="scrollbar-dark grid max-h-56 gap-1 overflow-y-auto pr-1">
+                      {reportComments.map((comment) => {
+                        const commentPickerId = `comment-${comment.id}`;
+                        return (
+                          <div
+                            key={comment.id}
+                            className="grid gap-2 rounded-md bg-background/55 px-2 py-1.5 text-sm"
+                          >
+                            <div>
+                              <span className="mr-2 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                                {reporterLabel(comment.commenter_ticket)}
+                              </span>
+                              {comment.message && (
+                                <span className="break-words font-semibold">{comment.message}</span>
+                              )}
+                              {comment.image_data_url && (
+                                <SpoilerImage
+                                  src={comment.image_data_url}
+                                  className="mt-2 max-h-52"
+                                />
+                              )}
+                            </div>
+                            <MuralReactionBar
+                              targetId={comment.id}
+                              pickerId={commentPickerId}
+                              reactions={commentReactions.filter(
+                                (reaction) => reaction.comment_id === comment.id,
+                              )}
+                              reactionOptions={reactionOptions}
+                              ticket={ticket}
+                              disabled={disabled}
+                              pickerOpen={reactionPickerReportId === commentPickerId}
+                              compact
+                              onPickerChange={setReactionPickerReportId}
+                              onReact={onCommentReact}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                   <ReportCommentForm
@@ -1664,6 +1760,7 @@ function Index() {
     reports,
     reportComments,
     reportReactions,
+    reportCommentReactions,
     reportReactionsList,
     reportStatus,
     ticket,
@@ -1681,6 +1778,7 @@ function Index() {
     updateStallReport,
     removeStallReport,
     reactToStallReport,
+    reactToStallReportComment,
     testQueueNotification,
     verifyAdminPassword,
     sendQueueEmote,
@@ -1864,6 +1962,7 @@ function Index() {
             reports={reports}
             comments={reportComments}
             reactions={reportReactions}
+            commentReactions={reportCommentReactions}
             reactionOptions={reportReactionsList}
             reportStatus={reportStatus}
             ticket={ticket}
@@ -1873,6 +1972,7 @@ function Index() {
             onSubmit={submitStallReport}
             onComment={submitStallReportComment}
             onReact={reactToStallReport}
+            onCommentReact={reactToStallReportComment}
             onUpdate={updateStallReport}
             onRemove={removeStallReport}
             className="lg:h-full lg:max-h-full lg:overflow-y-auto lg:overscroll-contain"
